@@ -74,6 +74,7 @@ export const App: React.FC = () => {
   const [playerPin, setPlayerPin] = useState<string>("");
   const [participantName, setParticipantName] = useState<string>("");
   const [playerAvatar, setPlayerAvatar] = useState<string>("🚀");
+  const [playerSessionId, setPlayerSessionId] = useState<string>("");
   const [playerStep, setPlayerStep] = useState<
     "JOIN" | "WAITING" | "QUESTION" | "RESULT" | "FINAL"
   >("JOIN");
@@ -135,6 +136,7 @@ export const App: React.FC = () => {
               setPlayerPin(parsed.pin);
               setParticipantName(parsed.participantName);
               setPlayerAvatar(parsed.avatar || "🚀");
+              setPlayerSessionId(validSession.id);
               setPlayerStep(parsed.step || "WAITING");
 
               const parts = await fetchSessionParticipants(validSession.id);
@@ -329,11 +331,30 @@ export const App: React.FC = () => {
   // PLAYER ACTIONS & PERSISTENCE
   // ==========================================
 
-  const handlePlayerJoined = (pin: string, pName: string, avatar: string) => {
+  const handlePlayerJoined = async (pin: string, pName: string, avatar: string, sessionId?: string) => {
     setPlayerPin(pin);
     setParticipantName(pName);
     setPlayerAvatar(avatar);
     setPlayerStep("WAITING");
+
+    let realSessId = sessionId;
+    if (!realSessId) {
+      const sess = await verifyGameSessionPin(pin);
+      if (sess) realSessId = sess.id;
+    }
+    if (!realSessId) {
+      realSessId = hostSession?.pin === pin ? hostSession.id : `sess-${pin}`;
+    }
+
+    setPlayerSessionId(realSessId);
+
+    // Fetch initial room participants directly from Supabase Cloud
+    const initialParts = await fetchSessionParticipants(realSessId);
+    if (initialParts && initialParts.length > 0) {
+      setPlayerRoomParticipants(initialParts);
+    } else {
+      setPlayerRoomParticipants(getSessionParticipants(realSessId));
+    }
 
     // Persist Player Session state across refreshes
     localStorage.setItem(
@@ -342,18 +363,17 @@ export const App: React.FC = () => {
         pin,
         participantName: pName,
         avatar,
+        sessionId: realSessId,
         step: "WAITING",
       })
     );
 
-    // Find local or hosted session reference
-    const sessId = hostSession?.pin === pin ? hostSession.id : `sess-${pin}`;
-    setPlayerRoomParticipants(getSessionParticipants(sessId));
-
-    // Subscribe to host events (Game Start, Question Switch)
-    subscribeToSession(sessId, (event: any) => {
+    // Subscribe to real-time events on the REAL Supabase Session UUID!
+    subscribeToSession(realSessId, (event: any) => {
       if (event.type === "PLAYER_JOINED") {
-        setPlayerRoomParticipants([...event.participants]);
+        if (event.participants && event.participants.length > 0) {
+          setPlayerRoomParticipants([...event.participants]);
+        }
       } else if (event.type === "SESSION_UPDATED") {
         if (event.status === "QUESTION") {
           setPlayerStep("QUESTION");
@@ -365,6 +385,21 @@ export const App: React.FC = () => {
       }
     });
   };
+
+  // Auto-Sync Player Room Participants every 2 seconds when waiting
+  useEffect(() => {
+    if (playerStep !== "WAITING" || !playerSessionId) return;
+    async function syncPlayerRoom() {
+      const list = await fetchSessionParticipants(playerSessionId);
+      if (list && list.length > 0) {
+        setPlayerRoomParticipants(list);
+      }
+    }
+
+    syncPlayerRoom();
+    const interval = setInterval(syncPlayerRoom, 2000);
+    return () => clearInterval(interval);
+  }, [playerStep, playerSessionId]);
 
   const handlePlayerSubmitAnswer = async (
     answerIndex: number,

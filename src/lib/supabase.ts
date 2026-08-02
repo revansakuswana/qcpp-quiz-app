@@ -505,13 +505,21 @@ export async function joinGameSession(pin: string, participantName: string, avat
   };
 }
 
-export async function fetchSessionParticipants(sessionId: string): Promise<SessionParticipant[]> {
-  if (isSupabaseConfigured && supabase) {
+export async function fetchSessionParticipants(sessionId?: string, pin?: string): Promise<SessionParticipant[]> {
+  let targetSessionId = sessionId;
+  if (!targetSessionId && pin) {
+    const sess = await verifyGameSessionPin(pin);
+    if (sess) {
+      targetSessionId = sess.id;
+    }
+  }
+
+  if (isSupabaseConfigured && supabase && targetSessionId) {
     try {
       const { data, error } = await supabase
         .from('session_participants')
         .select('*')
-        .eq('session_id', sessionId)
+        .eq('session_id', targetSessionId)
         .order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
         return data as SessionParticipant[];
@@ -520,7 +528,17 @@ export async function fetchSessionParticipants(sessionId: string): Promise<Sessi
       // Fallback
     }
   }
-  return mockSessionParticipantsStore[sessionId] || [];
+
+  if (targetSessionId && mockSessionParticipantsStore[targetSessionId]) {
+    return mockSessionParticipantsStore[targetSessionId];
+  }
+
+  if (pin && mockSessionsStore[pin]) {
+    const sess = mockSessionsStore[pin];
+    return mockSessionParticipantsStore[sess.id] || [];
+  }
+
+  return [];
 }
 
 export async function updateSessionStatus(sessionId: string, status: GameSession['status'], questionIndex?: number) {

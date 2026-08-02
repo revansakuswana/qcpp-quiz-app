@@ -5,7 +5,7 @@ import { joinGameSession, verifyGameSessionPin } from '../../lib/supabase';
 import { soundFx } from '../../lib/audio';
 
 interface PlayerJoinProps {
-  onJoined: (pin: string, participantName: string, avatar: string) => void;
+  onJoined: (pin: string, participantName: string, avatar: string, sessionId?: string) => void;
   onSwitchToHost: () => void;
 }
 
@@ -79,7 +79,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
-    onJoined(pin.trim(), participantName, selectedAvatar);
+    onJoined(pin.trim(), participantName, selectedAvatar, result.session.id);
   };
 
   return (

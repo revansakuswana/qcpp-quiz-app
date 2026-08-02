@@ -7,14 +7,14 @@ interface HostLobbyProps {
   pin: string;
   quiz: Quiz;
   participants: SessionParticipant[];
-  onStartGame: () => void;
+  onStartQuiz: () => void;
 }
 
 export const HostLobby: React.FC<HostLobbyProps> = ({
   pin,
   quiz,
   participants,
-  onStartGame,
+  onStartQuiz,
 }) => {
   const [copied, setCopied] = useState<boolean>(false);
 
@@ -101,7 +101,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
           <button
             onClick={() => {
               soundFx.playClick();
-              onStartGame();
+              onStartQuiz();
             }}
             disabled={participants.length === 0}
             className={`w-full py-3 sm:py-4 rounded-xl sm:rounded-2xl font-extrabold text-sm sm:text-lg shadow-xl flex items-center justify-center space-x-2 transition-all ${

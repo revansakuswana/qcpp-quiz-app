@@ -1,18 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, CheckCircle2, Clock, Award } from 'lucide-react';
-import { Question, PlayerAnswer, SessionParticipant } from '../../types/quiz';
+import { Question, PlayerAnswer } from '../../types/quiz';
 import { soundFx } from '../../lib/audio';
 
 interface HostQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
-  timeLeft: number;
   answers: PlayerAnswer[];
-  participants: SessionParticipant[];
-  onNext: () => void;
-  onEndGame: () => void;
-  isLastQuestion: boolean;
+  totalPlayers: number;
+  onNextStep: () => void;
 }
 
 const BUTTON_CONFIGS = [
@@ -26,19 +23,33 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
-  timeLeft,
-  answers,
-  participants,
-  onNext,
-  onEndGame,
-  isLastQuestion,
+  answers = [],
+  totalPlayers = 0,
+  onNextStep,
 }) => {
+  const [timeLeft, setTimeLeft] = useState<number>(question?.time_limit || 20);
+  const isLastQuestion = questionIndex >= totalQuestions - 1;
+
+  // Countdown timer for question
+  useEffect(() => {
+    setTimeLeft(question?.time_limit || 20);
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [question, questionIndex]);
+
   const isTimeUp = timeLeft <= 0;
-  const totalPlayers = participants.length;
 
   // Calculate answer counts for each option
   const counts = [0, 0, 0, 0];
-  answers.forEach((ans) => {
+  (answers || []).forEach((ans) => {
     if (ans.answer_index >= 0 && ans.answer_index < 4) {
       counts[ans.answer_index]++;
     }
@@ -59,7 +70,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
         </div>
 
         <h2 className="text-lg sm:text-3xl font-black font-['Fredoka',sans-serif] text-white my-2 sm:my-3 leading-snug">
-          {question.question_text}
+          {question?.question_text}
         </h2>
 
         {/* Live Answered Ratio Badge */}
@@ -71,9 +82,9 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
 
       {/* Answer Distribution Chart & Option Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 flex-1">
-        {question.options.map((optText, idx) => {
+        {(question?.options || []).map((optText, idx) => {
           const config = BUTTON_CONFIGS[idx % 4];
-          const isCorrect = idx === question.correct_option_index;
+          const isCorrect = idx === question?.correct_option_index;
           const count = counts[idx];
           const barHeightPercent = Math.round((count / maxCount) * 100);
 
@@ -124,20 +135,17 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
           <button
             onClick={() => {
               soundFx.playClick();
+              setTimeLeft(0); // Allow host to skip timer
             }}
-            className="w-full py-2.5 sm:py-3 bg-white/10 text-purple-200 text-xs sm:text-sm font-bold rounded-xl border border-white/10"
+            className="w-full py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs sm:text-sm font-bold rounded-xl border border-white/10 transition-colors"
           >
-            Tunggu Waktu Habis ({timeLeft}s)
+            Lewati Timer & Tampilkan Jawaban ({timeLeft}s) ⏭️
           </button>
         ) : (
           <button
             onClick={() => {
               soundFx.playClick();
-              if (isLastQuestion) {
-                onEndGame();
-              } else {
-                onNext();
-              }
+              if (onNextStep) onNextStep();
             }}
             className="w-full py-3 sm:py-4 bg-gradient-to-r from-kahoot-green to-emerald-600 hover:from-emerald-500 hover:to-kahoot-green text-white font-extrabold text-sm sm:text-base rounded-xl shadow-xl shadow-kahoot-green/30 active:scale-95 transition-all flex items-center justify-center space-x-2"
           >
