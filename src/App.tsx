@@ -75,6 +75,8 @@ export const App: React.FC = () => {
   const [participantName, setParticipantName] = useState<string>("");
   const [playerAvatar, setPlayerAvatar] = useState<string>("🚀");
   const [playerSessionId, setPlayerSessionId] = useState<string>("");
+  const [playerQuiz, setPlayerQuiz] = useState<Quiz | null>(null);
+  const [playerQuestionIdx, setPlayerQuestionIdx] = useState<number>(0);
   const [playerStep, setPlayerStep] = useState<
     "JOIN" | "WAITING" | "QUESTION" | "RESULT" | "FINAL"
   >("JOIN");
@@ -137,6 +139,8 @@ export const App: React.FC = () => {
               setParticipantName(parsed.participantName);
               setPlayerAvatar(parsed.avatar || "🚀");
               setPlayerSessionId(validSession.id);
+              if (validSession.quiz) setPlayerQuiz(validSession.quiz);
+              setPlayerQuestionIdx(validSession.current_question_index || 0);
               setPlayerStep(parsed.step || "WAITING");
 
               const parts = await fetchSessionParticipants(validSession.id);
@@ -328,7 +332,7 @@ export const App: React.FC = () => {
   };
 
   // ==========================================
-  // PLAYER ACTIONS & PERSISTENCE
+  // PLAYER ACTIONS & LIVE GAME STATUS SYNC
   // ==========================================
 
   const handlePlayerJoined = async (pin: string, pName: string, avatar: string, sessionId?: string) => {
@@ -340,7 +344,10 @@ export const App: React.FC = () => {
     let realSessId = sessionId;
     if (!realSessId) {
       const sess = await verifyGameSessionPin(pin);
-      if (sess) realSessId = sess.id;
+      if (sess) {
+        realSessId = sess.id;
+        if (sess.quiz) setPlayerQuiz(sess.quiz);
+      }
     }
     if (!realSessId) {
       realSessId = hostSession?.pin === pin ? hostSession.id : `sess-${pin}`;
@@ -377,6 +384,7 @@ export const App: React.FC = () => {
       } else if (event.type === "SESSION_UPDATED") {
         if (event.status === "QUESTION") {
           setPlayerStep("QUESTION");
+          setPlayerQuestionIdx(event.questionIndex || 0);
           setHasAnsweredCurrent(false);
           setSelectedAnswerIdx(null);
         } else if (event.status === "FINISHED") {
@@ -386,27 +394,46 @@ export const App: React.FC = () => {
     });
   };
 
-  // Auto-Sync Player Room Participants every 2 seconds when waiting
+  // 1.5-Second Live Polling for Player Game Session Status (Game Start & Question Switch)
   useEffect(() => {
-    if (playerStep !== "WAITING" || !playerSessionId) return;
-    async function syncPlayerRoom() {
-      const list = await fetchSessionParticipants(playerSessionId);
-      if (list && list.length > 0) {
-        setPlayerRoomParticipants(list);
+    if (activeMode !== "player" || playerStep === "JOIN" || !playerPin) return;
+
+    async function pollGameStatus() {
+      const liveSess = await verifyGameSessionPin(playerPin);
+      if (!liveSess) return;
+
+      if (liveSess.quiz) {
+        setPlayerQuiz(liveSess.quiz);
+      }
+
+      const remoteQIdx = liveSess.current_question_index || 0;
+
+      if (liveSess.status === "QUESTION") {
+        if (playerStep !== "QUESTION" || playerQuestionIdx !== remoteQIdx) {
+          setPlayerStep("QUESTION");
+          setPlayerQuestionIdx(remoteQIdx);
+          setHasAnsweredCurrent(false);
+          setSelectedAnswerIdx(null);
+        }
+      } else if (liveSess.status === "FINISHED" && playerStep !== "FINAL") {
+        setPlayerStep("FINAL");
       }
     }
 
-    syncPlayerRoom();
-    const interval = setInterval(syncPlayerRoom, 2000);
+    pollGameStatus();
+    const interval = setInterval(pollGameStatus, 1500);
     return () => clearInterval(interval);
-  }, [playerStep, playerSessionId]);
+  }, [activeMode, playerStep, playerPin, playerQuestionIdx]);
 
   const handlePlayerSubmitAnswer = async (
     answerIndex: number,
     timeTaken: number
   ) => {
-    if (!hostSession || !hostSession.quiz) return;
-    const currentQ = hostSession.quiz.questions[hostCurrentQuestionIdx];
+    const activeQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
+    const activeQIdx = playerQuestionIdx;
+    if (!activeQuiz || !activeQuiz.questions || activeQuiz.questions.length === 0) return;
+
+    const currentQ = activeQuiz.questions[activeQIdx] || activeQuiz.questions[0];
     if (!currentQ) return;
 
     setHasAnsweredCurrent(true);
@@ -421,31 +448,36 @@ export const App: React.FC = () => {
       ? Math.round(currentQ.points * (0.5 + 0.5 * speedRatio))
       : 0;
 
-    await submitPlayerAnswer(
-      hostSession.id,
-      currentQ.id,
-      participantName,
-      answerIndex,
-      isCorrect,
-      pointsEarned,
-      timeTaken
-    );
+    const activeSessId = playerSessionId || hostSession?.id;
+    if (activeSessId) {
+      await submitPlayerAnswer(
+        activeSessId,
+        currentQ.id,
+        participantName,
+        answerIndex,
+        isCorrect,
+        pointsEarned,
+        timeTaken
+      );
 
-    const updatedParts = getSessionParticipants(hostSession.id);
-    const myStats = updatedParts.find(
-      (p) => p.participant_name === participantName
-    );
+      const updatedParts = await fetchSessionParticipants(activeSessId, playerPin);
+      const myStats = updatedParts.find(
+        (p) => p.participant_name === participantName
+      );
 
-    setLastResult({
-      isCorrect,
-      pointsEarned,
-      totalScore: myStats?.score || 0,
-      streak: myStats?.streak || 0,
-      correctText: currentQ.options[currentQ.correct_option_index],
-    });
+      setLastResult({
+        isCorrect,
+        pointsEarned,
+        totalScore: myStats?.score || 0,
+        streak: myStats?.streak || 0,
+        correctText: currentQ.options[currentQ.correct_option_index],
+      });
+    }
 
     setPlayerStep("RESULT");
   };
+
+  const currentActiveQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
 
   return (
     <div className="min-h-screen flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
@@ -482,11 +514,14 @@ export const App: React.FC = () => {
               />
             )}
 
-            {playerStep === "QUESTION" && hostSession?.quiz && hostSession.quiz.questions && (
+            {playerStep === "QUESTION" && currentActiveQuiz && currentActiveQuiz.questions && (
               <PlayerQuestion
-                question={hostSession.quiz.questions[hostCurrentQuestionIdx] || hostSession.quiz.questions[0]}
-                questionIndex={hostCurrentQuestionIdx}
-                totalQuestions={(hostSession.quiz.questions || []).length}
+                question={
+                  currentActiveQuiz.questions[playerQuestionIdx] ||
+                  currentActiveQuiz.questions[0]
+                }
+                questionIndex={playerQuestionIdx}
+                totalQuestions={(currentActiveQuiz.questions || []).length}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
                 hasAnswered={hasAnsweredCurrent}
                 selectedAnswerIndex={selectedAnswerIdx}
@@ -505,7 +540,7 @@ export const App: React.FC = () => {
 
             {playerStep === "FINAL" && (
               <HostLeaderboard
-                participants={hostParticipants}
+                participants={playerRoomParticipants.length > 0 ? playerRoomParticipants : hostParticipants}
                 onPlayAgain={() => {
                   localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
                   setPlayerStep("JOIN");
