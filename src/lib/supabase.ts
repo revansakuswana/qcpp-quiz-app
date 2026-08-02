@@ -216,7 +216,12 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
           fullQuiz = mockQuizzesStore.find((mq) => mq.id === data.quiz_id) || mockQuizzesStore[0];
         }
 
-        const startTimestamp = data.created_at ? new Date(data.created_at).getTime() : Date.now();
+        // Use updated_at timestamp or created_at for wall-clock timer sync
+        const startTimestamp = data.updated_at
+          ? new Date(data.updated_at).getTime()
+          : data.created_at
+          ? new Date(data.created_at).getTime()
+          : Date.now();
 
         return {
           id: data.id,
@@ -429,6 +434,7 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
     quiz,
     status: 'WAITING',
     current_question_index: 0,
+    question_started_at: Date.now(),
   };
 
   if (isSupabaseConfigured && supabase) {
@@ -551,16 +557,29 @@ export async function updateSessionStatus(
   startedAt?: number
 ) {
   const startTimestamp = startedAt || Date.now();
+  const isoTime = new Date(startTimestamp).toISOString();
+
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase
+      // Update status and timestamp in Supabase DB
+      const { error } = await supabase
         .from('game_sessions')
         .update({
           status,
           current_question_index: questionIndex ?? 0,
-          created_at: new Date(startTimestamp).toISOString(),
+          created_at: isoTime,
         })
         .eq('id', sessionId);
+
+      if (error) {
+        await supabase
+          .from('game_sessions')
+          .update({
+            status,
+            current_question_index: questionIndex ?? 0,
+          })
+          .eq('id', sessionId);
+      }
     } catch {
       // Fallback
     }
@@ -606,6 +625,14 @@ export async function submitPlayerAnswer(
 
   if (isSupabaseConfigured && supabase) {
     try {
+      // Delete any previous answer for this question by the same participant to prevent duplicate counting
+      await supabase
+        .from('player_answers')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('question_id', questionId)
+        .eq('participant_name', participantName);
+
       await supabase.from('player_answers').insert([
         {
           session_id: sessionId,
@@ -643,7 +670,16 @@ export async function submitPlayerAnswer(
   if (!mockPlayerAnswersStore[sessionId]) {
     mockPlayerAnswersStore[sessionId] = [];
   }
-  mockPlayerAnswersStore[sessionId].push(answer);
+
+  // Update or insert in mock store to prevent duplicate answer entries
+  const existingIdx = mockPlayerAnswersStore[sessionId].findIndex(
+    (a) => a.question_id === questionId && a.participant_name === participantName
+  );
+  if (existingIdx >= 0) {
+    mockPlayerAnswersStore[sessionId][existingIdx] = answer;
+  } else {
+    mockPlayerAnswersStore[sessionId].push(answer);
+  }
 
   // Update player score in session
   if (mockSessionParticipantsStore[sessionId]) {
@@ -741,17 +777,34 @@ export async function fetchPlayerAnswersForQuestion(sessionId: string, questionI
         .from('player_answers')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('question_id', questionId);
+        .eq('question_id', questionId)
+        .order('created_at', { ascending: true });
       if (!error && data) {
-        return data as PlayerAnswer[];
+        // Keep ONLY the latest answer choice per participant
+        const latestMap = new Map<string, PlayerAnswer>();
+        (data as PlayerAnswer[]).forEach((ans) => {
+          latestMap.set(ans.participant_name, ans);
+        });
+        return Array.from(latestMap.values());
       }
     } catch {
       // Fallback
     }
   }
-  return (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
+
+  const mockList = (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
+  const latestMap = new Map<string, PlayerAnswer>();
+  mockList.forEach((ans) => {
+    latestMap.set(ans.participant_name, ans);
+  });
+  return Array.from(latestMap.values());
 }
 
 export function getPlayerAnswersForQuestion(sessionId: string, questionId: string): PlayerAnswer[] {
-  return (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
+  const mockList = (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
+  const latestMap = new Map<string, PlayerAnswer>();
+  mockList.forEach((ans) => {
+    latestMap.set(ans.participant_name, ans);
+  });
+  return Array.from(latestMap.values());
 }
