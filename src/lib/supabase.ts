@@ -655,23 +655,32 @@ export async function submitPlayerAnswer(
         }
       ]);
 
-      // Increment score in Supabase
-      const { data: currentPart } = await supabase
-        .from('session_participants')
-        .select('score, streak')
+      // Recalculate exact total score and streak for participant from player_answers
+      const { data: allAnswers } = await supabase
+        .from('player_answers')
+        .select('is_correct, points_earned')
         .eq('session_id', sessionId)
-        .eq('participant_name', participantName)
-        .single();
+        .eq('participant_name', participantName);
 
-      if (currentPart) {
-        const newScore = (currentPart.score || 0) + (isCorrect ? pointsEarned : 0);
-        const newStreak = isCorrect ? (currentPart.streak || 0) + 1 : 0;
-        await supabase
-          .from('session_participants')
-          .update({ score: newScore, streak: newStreak })
-          .eq('session_id', sessionId)
-          .eq('participant_name', participantName);
+      let exactTotalScore = 0;
+      let exactStreak = 0;
+
+      if (allAnswers && allAnswers.length > 0) {
+        allAnswers.forEach((ans) => {
+          if (ans.is_correct) {
+            exactTotalScore += (ans.points_earned || 0);
+            exactStreak += 1;
+          } else {
+            exactStreak = 0;
+          }
+        });
       }
+
+      await supabase
+        .from('session_participants')
+        .update({ score: exactTotalScore, streak: exactStreak })
+        .eq('session_id', sessionId)
+        .eq('participant_name', participantName);
     } catch {
       // Fallback
     }

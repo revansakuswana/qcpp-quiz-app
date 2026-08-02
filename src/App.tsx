@@ -474,12 +474,24 @@ export const App: React.FC = () => {
       } else if (liveSess.status === "FINISHED" && playerStep !== "FINAL") {
         setPlayerStep("FINAL");
       }
+
+      // Live sync player scores and room participants from Supabase Cloud
+      const updatedParts = await fetchSessionParticipants(liveSess.id, playerPin);
+      if (updatedParts && updatedParts.length > 0) {
+        setPlayerRoomParticipants(updatedParts);
+        const myStats = updatedParts.find((p) => p.participant_name === participantName);
+        if (myStats) {
+          setLastResult((prev) =>
+            prev ? { ...prev, totalScore: myStats.score, streak: myStats.streak } : prev
+          );
+        }
+      }
     }
 
     pollGameStatus();
     const interval = setInterval(pollGameStatus, 1500);
     return () => clearInterval(interval);
-  }, [activeMode, playerStep, playerPin, playerQuestionIdx]);
+  }, [activeMode, playerStep, playerPin, playerQuestionIdx, participantName]);
 
   const handlePlayerSubmitAnswer = async (
     answerIndex: number,
