@@ -7,9 +7,8 @@ interface PlayerQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
-  questionStartedAt?: number;
+  forceTimeUp?: boolean;
   onSubmitAnswer: (answerIndex: number, timeTaken: number) => void;
-  onTimeUp?: () => void;
   selectedAnswerIndex: number | null;
 }
 
@@ -40,9 +39,8 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
-  questionStartedAt,
+  forceTimeUp = false,
   onSubmitAnswer,
-  onTimeUp,
   selectedAnswerIndex,
 }) => {
   const timeLimit = question?.time_limit || 20;
@@ -50,48 +48,46 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   const [startTime] = useState<number>(Date.now());
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(selectedAnswerIndex);
 
+  // Reset timer on question change
   useEffect(() => {
+    setTimeLeft(question?.time_limit || 20);
     setLocalSelectedIdx(selectedAnswerIndex);
-  }, [selectedAnswerIndex]);
+  }, [question, questionIndex, selectedAnswerIndex]);
 
-  // Ultra-precise Wall-Clock Synchronized Timer
+  // Clean, accurate 1-second countdown
   useEffect(() => {
-    const calcTimeLeft = () => {
-      if (!questionStartedAt) return timeLimit;
-      const elapsed = Math.floor((Date.now() - questionStartedAt) / 1000);
-      return Math.max(0, timeLimit - elapsed);
-    };
-
-    const initialRemaining = calcTimeLeft();
-    setTimeLeft(initialRemaining);
-    if (initialRemaining <= 0 && onTimeUp) {
-      onTimeUp();
+    if (forceTimeUp) {
+      setTimeLeft(0);
+      return;
     }
 
+    if (timeLeft <= 0) return;
+
     const timer = setInterval(() => {
-      const remaining = calcTimeLeft();
-      setTimeLeft(remaining);
-      if (remaining <= 5 && remaining > 0) {
-        soundFx.playTick();
-      }
-      if (remaining <= 0) {
-        clearInterval(timer);
-        if (onTimeUp) onTimeUp();
-      }
-    }, 500);
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        if (prev <= 5) {
+          soundFx.playTick();
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => clearInterval(timer);
-  }, [question, questionIndex, questionStartedAt, timeLimit, onTimeUp]);
+  }, [timeLeft, forceTimeUp, questionIndex]);
 
   const handleSelectOption = (index: number) => {
-    if (timeLeft <= 0) return;
+    if (timeLeft <= 0 || forceTimeUp) return;
     soundFx.playClick();
     setLocalSelectedIdx(index);
     const timeTaken = (Date.now() - startTime) / 1000;
     onSubmitAnswer(index, timeTaken);
   };
 
-  const isTimeUp = timeLeft <= 0;
+  const isTimeUp = timeLeft <= 0 || forceTimeUp;
   const progressPercent = (timeLeft / timeLimit) * 100;
 
   const isCorrectAnswer = localSelectedIdx !== null && localSelectedIdx === question?.correct_option_index;
@@ -180,7 +176,7 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
         })}
       </div>
 
-      {/* Answer Feedback Banner (Shows Result when Time Up / Skipped) */}
+      {/* Answer Feedback Banner */}
       <div className="bg-[#240a5e] border border-white/20 rounded-xl p-3.5 text-center text-xs font-semibold text-purple-200 shadow-xl">
         {isTimeUp ? (
           isCorrectAnswer ? (

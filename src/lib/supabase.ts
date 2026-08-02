@@ -531,7 +531,12 @@ export async function fetchSessionParticipants(sessionId?: string, pin?: string)
         .eq('session_id', targetSessionId)
         .order('created_at', { ascending: true });
       if (!error && data && data.length > 0) {
-        return data as SessionParticipant[];
+        // Deduplicate participants by participant_name
+        const uniqueMap = new Map<string, SessionParticipant>();
+        (data as SessionParticipant[]).forEach((p) => {
+          uniqueMap.set(p.participant_name, p);
+        });
+        return Array.from(uniqueMap.values());
       }
     } catch {
       // Fallback
@@ -539,7 +544,12 @@ export async function fetchSessionParticipants(sessionId?: string, pin?: string)
   }
 
   if (targetSessionId && mockSessionParticipantsStore[targetSessionId]) {
-    return mockSessionParticipantsStore[targetSessionId];
+    const list = mockSessionParticipantsStore[targetSessionId];
+    const uniqueMap = new Map<string, SessionParticipant>();
+    list.forEach((p) => {
+      uniqueMap.set(p.participant_name, p);
+    });
+    return Array.from(uniqueMap.values());
   }
 
   if (pin && mockSessionsStore[pin]) {

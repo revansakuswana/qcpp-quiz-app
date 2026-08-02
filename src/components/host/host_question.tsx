@@ -7,7 +7,6 @@ interface HostQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
-  questionStartedAt?: number;
   answers: PlayerAnswer[];
   totalPlayers: number;
   onNextStep: () => void;
@@ -25,7 +24,6 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
-  questionStartedAt,
   answers = [],
   totalPlayers = 0,
   onNextStep,
@@ -35,26 +33,27 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const isLastQuestion = questionIndex >= totalQuestions - 1;
 
-  // Ultra-precise Wall-Clock Synchronized Timer
+  // Reset timer on question change
   useEffect(() => {
-    const calcTimeLeft = () => {
-      if (!questionStartedAt) return timeLimit;
-      const elapsed = Math.floor((Date.now() - questionStartedAt) / 1000);
-      return Math.max(0, timeLimit - elapsed);
-    };
+    setTimeLeft(question?.time_limit || 20);
+  }, [question, questionIndex]);
 
-    setTimeLeft(calcTimeLeft());
+  // Clean 1-second countdown
+  useEffect(() => {
+    if (timeLeft <= 0) return;
 
     const timer = setInterval(() => {
-      const remaining = calcTimeLeft();
-      setTimeLeft(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-      }
-    }, 500);
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
     return () => clearInterval(timer);
-  }, [question, questionIndex, questionStartedAt, timeLimit]);
+  }, [timeLeft, questionIndex]);
 
   const isTimeUp = timeLeft <= 0;
 

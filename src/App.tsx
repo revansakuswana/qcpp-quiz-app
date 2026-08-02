@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 import { Navbar } from "./components/navbar";
 import { PlayerJoin } from "./components/player/player_join";
 import { PlayerWaiting } from "./components/player/player_waiting";
@@ -81,6 +82,7 @@ export const App: React.FC = () => {
   const [playerSessionId, setPlayerSessionId] = useState<string>("");
   const [playerQuiz, setPlayerQuiz] = useState<Quiz | null>(null);
   const [playerQuestionIdx, setPlayerQuestionIdx] = useState<number>(0);
+  const [playerForceTimeUp, setPlayerForceTimeUp] = useState<boolean>(false);
   const [playerStep, setPlayerStep] = useState<
     "JOIN" | "WAITING" | "QUESTION" | "RESULT" | "FINAL"
   >("JOIN");
@@ -99,61 +101,67 @@ export const App: React.FC = () => {
     correctText: string;
   } | null>(null);
 
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+
   // Load Initial Quizzes & Restore Active Sessions on Refresh
   useEffect(() => {
     async function initApp() {
-      const list = await fetchQuizzes();
-      setQuizzes(list);
+      try {
+        const list = await fetchQuizzes();
+        setQuizzes(list);
 
-      // 1. Restore Active Host Session on Refresh if authenticated
-      const savedHostSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
-      if (savedHostSession) {
-        try {
-          const parsed = JSON.parse(savedHostSession);
-          if (parsed && parsed.pin) {
-            const validSession = await verifyGameSessionPin(parsed.pin);
-            if (validSession) {
-              setHostSession(validSession);
-              setHostCurrentQuestionIdx(parsed.questionIndex || 0);
-              setHostStep(parsed.step || "LOBBY");
+        // 1. Restore Active Host Session on Refresh if authenticated
+        const savedHostSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
+        if (savedHostSession) {
+          try {
+            const parsed = JSON.parse(savedHostSession);
+            if (parsed && parsed.pin) {
+              const validSession = await verifyGameSessionPin(parsed.pin);
+              if (validSession) {
+                setHostSession(validSession);
+                setHostCurrentQuestionIdx(parsed.questionIndex || 0);
+                setHostStep(parsed.step || "LOBBY");
 
-              const parts = await fetchSessionParticipants(validSession.id);
-              setHostParticipants(parts);
+                const parts = await fetchSessionParticipants(validSession.id);
+                setHostParticipants(parts);
 
-              // Auto switch to host mode on refresh if host was active
-              if (localStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true") {
-                setActiveMode("host");
+                // Auto switch to host mode on refresh if host was active
+                if (localStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true") {
+                  setActiveMode("host");
+                }
               }
             }
+          } catch {
+            localStorage.removeItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
           }
-        } catch {
-          localStorage.removeItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
         }
-      }
 
-      // 2. Restore Active Player Session on Refresh
-      const savedPlayerSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
-      if (savedPlayerSession) {
-        try {
-          const parsed = JSON.parse(savedPlayerSession);
-          if (parsed && parsed.pin && parsed.participantName) {
-            const validSession = await verifyGameSessionPin(parsed.pin);
-            if (validSession) {
-              setPlayerPin(parsed.pin);
-              setParticipantName(parsed.participantName);
-              setPlayerAvatar(parsed.avatar || "🚀");
-              setPlayerSessionId(validSession.id);
-              if (validSession.quiz) setPlayerQuiz(validSession.quiz);
-              setPlayerQuestionIdx(validSession.current_question_index || 0);
-              setPlayerStep(parsed.step || "WAITING");
+        // 2. Restore Active Player Session on Refresh
+        const savedPlayerSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
+        if (savedPlayerSession) {
+          try {
+            const parsed = JSON.parse(savedPlayerSession);
+            if (parsed && parsed.pin && parsed.participantName) {
+              const validSession = await verifyGameSessionPin(parsed.pin);
+              if (validSession) {
+                setPlayerPin(parsed.pin);
+                setParticipantName(parsed.participantName);
+                setPlayerAvatar(parsed.avatar || "🚀");
+                setPlayerSessionId(validSession.id);
+                if (validSession.quiz) setPlayerQuiz(validSession.quiz);
+                setPlayerQuestionIdx(validSession.current_question_index || 0);
+                setPlayerStep(parsed.step || "WAITING");
 
-              const parts = await fetchSessionParticipants(validSession.id);
-              setPlayerRoomParticipants(parts);
+                const parts = await fetchSessionParticipants(validSession.id);
+                setPlayerRoomParticipants(parts);
+              }
             }
+          } catch {
+            localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
           }
-        } catch {
-          localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
         }
+      } finally {
+        setIsInitializing(false);
       }
     }
 
@@ -454,12 +462,15 @@ export const App: React.FC = () => {
       const remoteQIdx = liveSess.current_question_index || 0;
 
       if (liveSess.status === "QUESTION") {
+        setPlayerForceTimeUp(false);
         if (playerStep !== "QUESTION" || playerQuestionIdx !== remoteQIdx) {
           setPlayerStep("QUESTION");
           setPlayerQuestionIdx(remoteQIdx);
           setHasAnsweredCurrent(false);
           setSelectedAnswerIdx(null);
         }
+      } else if (liveSess.status === "SHOW_RESULT") {
+        setPlayerForceTimeUp(true);
       } else if (liveSess.status === "FINISHED" && playerStep !== "FINAL") {
         setPlayerStep("FINAL");
       }
@@ -520,6 +531,36 @@ export const App: React.FC = () => {
     }
   };
 
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-[#1a054a] flex flex-col items-center justify-center p-4 text-white font-['Plus_Jakarta_Sans',sans-serif]">
+        <div className="relative flex flex-col items-center space-y-6 max-w-sm w-full text-center">
+          {/* Animated Glowing Ring & Logo */}
+          <div className="relative">
+            <div className="absolute -inset-4 bg-gradient-to-r from-kahoot-red via-kahoot-blue to-kahoot-yellow rounded-full blur-lg opacity-75 animate-pulse" />
+            <div className="relative bg-[#240a5e] border-2 border-white/20 p-6 sm:p-8 rounded-3xl shadow-2xl flex items-center justify-center space-x-2">
+              <span className="text-3xl sm:text-4xl font-black font-['Fredoka',sans-serif] bg-gradient-to-r from-kahoot-yellow to-amber-300 bg-clip-text text-transparent">
+                QCPP
+              </span>
+              <span className="px-2.5 py-1 bg-kahoot-red text-white font-extrabold text-xs sm:text-sm rounded-md shadow">
+                Quiz
+              </span>
+            </div>
+          </div>
+
+          {/* Spinner and Loading Text */}
+          <div className="flex flex-col items-center space-y-3">
+            <Loader2 className="w-9 h-9 text-kahoot-yellow animate-spin" />
+            <div className="space-y-1">
+              <h3 className="text-lg font-bold text-white">Memuat Kuis & Sinkronisasi Room...</h3>
+              <p className="text-xs text-purple-200/70">Mohon tunggu sebentar...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const currentActiveQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
 
   return (
@@ -565,7 +606,7 @@ export const App: React.FC = () => {
                 }
                 questionIndex={playerQuestionIdx}
                 totalQuestions={(currentActiveQuiz.questions || []).length}
-                questionStartedAt={questionStartedAt}
+                forceTimeUp={playerForceTimeUp}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
                 selectedAnswerIndex={selectedAnswerIdx}
               />
