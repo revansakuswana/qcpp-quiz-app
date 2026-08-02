@@ -284,15 +284,18 @@ export const App: React.FC = () => {
 
   const handleHostNextQuestion = async () => {
     if (!hostSession || !hostSession.quiz) return;
-    const totalQs = hostSession.quiz.questions.length;
+    const questionsList = hostSession.quiz.questions || [];
+    const totalQs = questionsList.length;
     const nextIdx = hostCurrentQuestionIdx + 1;
 
     if (nextIdx < totalQs) {
       setHostCurrentQuestionIdx(nextIdx);
-      const nextQ = hostSession.quiz.questions[nextIdx];
-      setHostCurrentAnswers(
-        getPlayerAnswersForQuestion(hostSession.id, nextQ.id)
-      );
+      const nextQ = questionsList[nextIdx];
+      if (nextQ) {
+        setHostCurrentAnswers(
+          getPlayerAnswersForQuestion(hostSession.id, nextQ.id)
+        );
+      }
 
       localStorage.setItem(
         STORAGE_KEYS.ACTIVE_HOST_SESSION,
@@ -444,11 +447,11 @@ export const App: React.FC = () => {
               />
             )}
 
-            {playerStep === "QUESTION" && hostSession?.quiz && (
+            {playerStep === "QUESTION" && hostSession?.quiz && hostSession.quiz.questions && (
               <PlayerQuestion
-                question={hostSession.quiz.questions[hostCurrentQuestionIdx]}
+                question={hostSession.quiz.questions[hostCurrentQuestionIdx] || hostSession.quiz.questions[0]}
                 questionIndex={hostCurrentQuestionIdx}
-                totalQuestions={hostSession.quiz.questions.length}
+                totalQuestions={(hostSession.quiz.questions || []).length}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
                 hasAnswered={hasAnsweredCurrent}
                 selectedAnswerIndex={selectedAnswerIdx}
@@ -497,13 +500,13 @@ export const App: React.FC = () => {
                   />
                 )}
 
-                {hostStep === "QUESTION" && hostSession.quiz && (
+                {hostStep === "QUESTION" && hostSession.quiz && hostSession.quiz.questions && (
                   <HostQuestion
                     question={
-                      hostSession.quiz.questions[hostCurrentQuestionIdx]
+                      hostSession.quiz.questions[hostCurrentQuestionIdx] || hostSession.quiz.questions[0]
                     }
                     questionIndex={hostCurrentQuestionIdx}
-                    totalQuestions={hostSession.quiz.questions.length}
+                    totalQuestions={(hostSession.quiz.questions || []).length}
                     answers={hostCurrentAnswers}
                     totalPlayers={hostParticipants.length}
                     onNextStep={handleHostNextQuestion}

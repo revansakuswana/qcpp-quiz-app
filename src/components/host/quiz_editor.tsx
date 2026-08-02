@@ -126,7 +126,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
             >
               <div>
                 <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-qcpp-purple text-purple-200">
-                  {q.code} • {q.questions.length} Soal
+                  {q.code} • {(q.questions || []).length} Soal
                 </span>
                 <h3 className="text-sm sm:text-lg font-bold text-white mt-1.5 leading-snug">{q.title}</h3>
                 <p className="text-[11px] sm:text-xs text-purple-200 mt-1 line-clamp-2">{q.description}</p>

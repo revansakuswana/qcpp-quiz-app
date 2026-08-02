@@ -182,17 +182,47 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
     try {
       const { data, error } = await supabase
         .from('game_sessions')
-        .select('*, quiz:quizzes(*)')
+        .select('*, quiz:quizzes(*, questions(*))')
         .eq('pin', cleanPin)
         .single();
       if (!error && data) {
+        let fullQuiz: Quiz | undefined = undefined;
+
+        if (data.quiz) {
+          fullQuiz = {
+            ...data.quiz,
+            questions: data.quiz.questions && data.quiz.questions.length > 0 ? data.quiz.questions : [],
+            allowed_participants: data.quiz.allowed_participants || [],
+          };
+
+          // If questions are empty, fetch from questions table directly
+          if (fullQuiz.questions.length === 0) {
+            const { data: qData } = await supabase
+              .from('questions')
+              .select('*')
+              .eq('quiz_id', data.quiz_id);
+            if (qData && qData.length > 0) {
+              fullQuiz.questions = qData;
+            } else {
+              const matchedMock = mockQuizzesStore.find((mq) => mq.id === data.quiz_id || mq.code === data.quiz.code);
+              if (matchedMock) {
+                fullQuiz.questions = matchedMock.questions;
+              }
+            }
+          }
+        }
+
+        if (!fullQuiz) {
+          fullQuiz = mockQuizzesStore.find((mq) => mq.id === data.quiz_id) || mockQuizzesStore[0];
+        }
+
         return {
           id: data.id,
           pin: data.pin,
           quiz_id: data.quiz_id,
-          quiz: data.quiz,
+          quiz: fullQuiz,
           status: data.status,
-          current_question_index: data.current_question_index,
+          current_question_index: data.current_question_index || 0,
         } as GameSession;
       }
     } catch {
@@ -376,7 +406,13 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
   if (!quiz && isSupabaseConfigured && supabase) {
     try {
       const { data } = await supabase.from('quizzes').select('*, questions(*)').eq('id', quizId).single();
-      if (data) quiz = data as Quiz;
+      if (data) {
+        quiz = {
+          ...data,
+          questions: data.questions || [],
+          allowed_participants: data.allowed_participants || [],
+        } as Quiz;
+      }
     } catch {
       // ignore
     }

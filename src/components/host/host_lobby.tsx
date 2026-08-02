@@ -53,7 +53,7 @@ export const HostLobby: React.FC<HostLobbyProps> = ({
         </div>
 
         <p className="text-[11px] sm:text-xs text-purple-200 truncate">
-          Judul Quiz: <strong className="text-white font-['Fredoka',sans-serif]">{quiz.title}</strong> ({quiz.questions.length} Soal)
+          Judul Quiz: <strong className="text-white font-['Fredoka',sans-serif]">{quiz?.title || 'QCPP Quiz'}</strong> ({(quiz?.questions || []).length} Soal)
         </p>
       </div>
 
