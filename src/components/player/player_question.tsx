@@ -48,11 +48,15 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   const [startTime] = useState<number>(Date.now());
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(selectedAnswerIndex);
 
-  // Reset timer on question change
+  // Reset timer ONLY when question changes
   useEffect(() => {
     setTimeLeft(question?.time_limit || 20);
+  }, [questionIndex, question?.id]);
+
+  // Sync selected answer index without touching timer
+  useEffect(() => {
     setLocalSelectedIdx(selectedAnswerIndex);
-  }, [question, questionIndex, selectedAnswerIndex]);
+  }, [selectedAnswerIndex]);
 
   // Clean, accurate 1-second countdown
   useEffect(() => {

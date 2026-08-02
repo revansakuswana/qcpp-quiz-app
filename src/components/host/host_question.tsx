@@ -33,10 +33,10 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const isLastQuestion = questionIndex >= totalQuestions - 1;
 
-  // Reset timer on question change
+  // Reset timer ONLY when question changes
   useEffect(() => {
     setTimeLeft(question?.time_limit || 20);
-  }, [question, questionIndex]);
+  }, [questionIndex, question?.id]);
 
   // Clean 1-second countdown
   useEffect(() => {
