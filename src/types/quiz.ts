@@ -34,6 +34,7 @@ export interface GameSession {
   quiz?: Quiz;
   status: GameStatus;
   current_question_index: number;
+  question_started_at?: number;
   created_at?: string;
 }
 

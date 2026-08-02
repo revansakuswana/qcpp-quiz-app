@@ -216,6 +216,8 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
           fullQuiz = mockQuizzesStore.find((mq) => mq.id === data.quiz_id) || mockQuizzesStore[0];
         }
 
+        const startTimestamp = data.created_at ? new Date(data.created_at).getTime() : Date.now();
+
         return {
           id: data.id,
           pin: data.pin,
@@ -223,6 +225,7 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
           quiz: fullQuiz,
           status: data.status,
           current_question_index: data.current_question_index || 0,
+          question_started_at: startTimestamp,
         } as GameSession;
       }
     } catch {
@@ -541,12 +544,22 @@ export async function fetchSessionParticipants(sessionId?: string, pin?: string)
   return [];
 }
 
-export async function updateSessionStatus(sessionId: string, status: GameSession['status'], questionIndex?: number) {
+export async function updateSessionStatus(
+  sessionId: string,
+  status: GameSession['status'],
+  questionIndex?: number,
+  startedAt?: number
+) {
+  const startTimestamp = startedAt || Date.now();
   if (isSupabaseConfigured && supabase) {
     try {
       await supabase
         .from('game_sessions')
-        .update({ status, current_question_index: questionIndex ?? 0 })
+        .update({
+          status,
+          current_question_index: questionIndex ?? 0,
+          created_at: new Date(startTimestamp).toISOString(),
+        })
         .eq('id', sessionId);
     } catch {
       // Fallback
@@ -559,6 +572,7 @@ export async function updateSessionStatus(sessionId: string, status: GameSession
       if (questionIndex !== undefined) {
         s.current_question_index = questionIndex;
       }
+      s.question_started_at = startTimestamp;
     }
   });
 
@@ -566,6 +580,7 @@ export async function updateSessionStatus(sessionId: string, status: GameSession
     type: 'SESSION_UPDATED',
     status,
     questionIndex,
+    startedAt: startTimestamp,
   });
 }
 
@@ -717,6 +732,24 @@ export function subscribeToSession(sessionId: string, callback: ListenerCallback
 
 export function getSessionParticipants(sessionId: string): SessionParticipant[] {
   return mockSessionParticipantsStore[sessionId] || [];
+}
+
+export async function fetchPlayerAnswersForQuestion(sessionId: string, questionId: string): Promise<PlayerAnswer[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('player_answers')
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('question_id', questionId);
+      if (!error && data) {
+        return data as PlayerAnswer[];
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
 }
 
 export function getPlayerAnswersForQuestion(sessionId: string, questionId: string): PlayerAnswer[] {

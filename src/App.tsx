@@ -23,6 +23,7 @@ import {
   subscribeToSession,
   getSessionParticipants,
   getPlayerAnswersForQuestion,
+  fetchPlayerAnswersForQuestion,
   fetchSessionParticipants,
   verifyGameSessionPin,
 } from "./lib/supabase";
@@ -55,6 +56,9 @@ export const App: React.FC = () => {
 
   // Quizzes Data
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+
+  // Question Timer Timestamp Sync
+  const [questionStartedAt, setQuestionStartedAt] = useState<number>(Date.now());
 
   // Host Game State
   const [hostSession, setHostSession] = useState<GameSession | null>(null);
@@ -265,8 +269,29 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [hostSession]);
 
+  // 1.5-Second Live Polling for Host Question Answers Collected
+  useEffect(() => {
+    if (activeMode !== "host" || hostStep !== "QUESTION" || !hostSession || !hostSession.quiz) return;
+
+    const currentQ = hostSession.quiz.questions[hostCurrentQuestionIdx];
+    if (!currentQ) return;
+
+    async function syncAnswers() {
+      const answersList = await fetchPlayerAnswersForQuestion(hostSession!.id, currentQ.id);
+      if (answersList) {
+        setHostCurrentAnswers(answersList);
+      }
+    }
+
+    syncAnswers();
+    const interval = setInterval(syncAnswers, 1500);
+    return () => clearInterval(interval);
+  }, [activeMode, hostStep, hostSession, hostCurrentQuestionIdx]);
+
   const handleHostStartQuiz = async () => {
     if (!hostSession) return;
+    const now = Date.now();
+    setQuestionStartedAt(now);
     setHostStep("QUESTION");
     setHostCurrentQuestionIdx(0);
     const q0 = hostSession.quiz?.questions[0];
@@ -282,14 +307,17 @@ export const App: React.FC = () => {
         quizId: hostSession.quiz_id,
         step: "QUESTION",
         questionIndex: 0,
+        startedAt: now,
       })
     );
 
-    await updateSessionStatus(hostSession.id, "QUESTION", 0);
+    await updateSessionStatus(hostSession.id, "QUESTION", 0, now);
   };
 
   const handleHostNextQuestion = async () => {
     if (!hostSession || !hostSession.quiz) return;
+    const now = Date.now();
+    setQuestionStartedAt(now);
     const questionsList = hostSession.quiz.questions || [];
     const totalQs = questionsList.length;
     const nextIdx = hostCurrentQuestionIdx + 1;
@@ -311,10 +339,11 @@ export const App: React.FC = () => {
           quizId: hostSession.quiz_id,
           step: "QUESTION",
           questionIndex: nextIdx,
+          startedAt: now,
         })
       );
 
-      await updateSessionStatus(hostSession.id, "QUESTION", nextIdx);
+      await updateSessionStatus(hostSession.id, "QUESTION", nextIdx, now);
     } else {
       setHostStep("LEADERBOARD");
       localStorage.setItem(
@@ -327,8 +356,20 @@ export const App: React.FC = () => {
           questionIndex: hostCurrentQuestionIdx,
         })
       );
-      await updateSessionStatus(hostSession.id, "FINISHED");
+      await updateSessionStatus(hostSession.id, "FINISHED", nextIdx, now);
     }
+  };
+
+  const handleHostSkipTimer = async () => {
+    if (!hostSession) return;
+    const pastTime = Date.now() - 100000;
+    setQuestionStartedAt(pastTime);
+    await updateSessionStatus(
+      hostSession.id,
+      "SHOW_RESULT",
+      hostCurrentQuestionIdx,
+      pastTime
+    );
   };
 
   // ==========================================
@@ -406,6 +447,10 @@ export const App: React.FC = () => {
         setPlayerQuiz(liveSess.quiz);
       }
 
+      if (liveSess.question_started_at) {
+        setQuestionStartedAt(liveSess.question_started_at);
+      }
+
       const remoteQIdx = liveSess.current_question_index || 0;
 
       if (liveSess.status === "QUESTION") {
@@ -473,8 +518,6 @@ export const App: React.FC = () => {
         correctText: currentQ.options[currentQ.correct_option_index],
       });
     }
-
-    setPlayerStep("RESULT");
   };
 
   const currentActiveQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
@@ -522,8 +565,8 @@ export const App: React.FC = () => {
                 }
                 questionIndex={playerQuestionIdx}
                 totalQuestions={(currentActiveQuiz.questions || []).length}
+                questionStartedAt={questionStartedAt}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
-                hasAnswered={hasAnsweredCurrent}
                 selectedAnswerIndex={selectedAnswerIdx}
               />
             )}
@@ -577,9 +620,11 @@ export const App: React.FC = () => {
                     }
                     questionIndex={hostCurrentQuestionIdx}
                     totalQuestions={(hostSession.quiz.questions || []).length}
+                    questionStartedAt={questionStartedAt}
                     answers={hostCurrentAnswers}
                     totalPlayers={hostParticipants.length}
                     onNextStep={handleHostNextQuestion}
+                    onSkipTimer={handleHostSkipTimer}
                   />
                 )}
 

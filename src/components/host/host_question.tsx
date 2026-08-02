@@ -7,9 +7,11 @@ interface HostQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
+  questionStartedAt?: number;
   answers: PlayerAnswer[];
   totalPlayers: number;
   onNextStep: () => void;
+  onSkipTimer?: () => void;
 }
 
 const BUTTON_CONFIGS = [
@@ -23,27 +25,36 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
+  questionStartedAt,
   answers = [],
   totalPlayers = 0,
   onNextStep,
+  onSkipTimer,
 }) => {
-  const [timeLeft, setTimeLeft] = useState<number>(question?.time_limit || 20);
+  const timeLimit = question?.time_limit || 20;
+  const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const isLastQuestion = questionIndex >= totalQuestions - 1;
 
-  // Countdown timer for question
+  // Ultra-precise Wall-Clock Synchronized Timer
   useEffect(() => {
-    setTimeLeft(question?.time_limit || 20);
+    const calcTimeLeft = () => {
+      if (!questionStartedAt) return timeLimit;
+      const elapsed = Math.floor((Date.now() - questionStartedAt) / 1000);
+      return Math.max(0, timeLimit - elapsed);
+    };
+
+    setTimeLeft(calcTimeLeft());
+
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      const remaining = calcTimeLeft();
+      setTimeLeft(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+      }
+    }, 500);
+
     return () => clearInterval(timer);
-  }, [question, questionIndex]);
+  }, [question, questionIndex, questionStartedAt, timeLimit]);
 
   const isTimeUp = timeLeft <= 0;
 
@@ -65,7 +76,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
           <span>Pertanyaan {questionIndex + 1} / {totalQuestions}</span>
           <span className="text-kahoot-yellow font-mono text-sm sm:text-base flex items-center space-x-1">
             <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span>{timeLeft} detik</span>
+            <span>{isTimeUp ? '0s' : `${timeLeft}s`}</span>
           </span>
         </div>
 
@@ -93,7 +104,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
               key={idx}
               className={`p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border-2 flex flex-col justify-between transition-all relative overflow-hidden ${
                 config.bg
-              } ${isTimeUp && isCorrect ? 'ring-4 ring-white shadow-2xl' : 'border-white/20'} opacity-95`}
+              } ${isTimeUp && isCorrect ? 'ring-4 ring-white shadow-2xl scale-[1.01]' : 'border-white/20'} opacity-95`}
             >
               {/* Option Top Header */}
               <div className="flex items-center justify-between z-10">
@@ -101,7 +112,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
                   {config.shape}
                 </div>
                 {isTimeUp && isCorrect && (
-                  <span className="px-2.5 py-0.5 sm:py-1 bg-white text-black font-black text-[10px] sm:text-xs rounded-full flex items-center space-x-1 shadow-md">
+                  <span className="px-2.5 py-0.5 sm:py-1 bg-white text-black font-black text-[10px] sm:text-xs rounded-full flex items-center space-x-1 shadow-md animate-bounce-short">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                     <span>BENAR</span>
                   </span>
@@ -135,9 +146,10 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
           <button
             onClick={() => {
               soundFx.playClick();
-              setTimeLeft(0); // Allow host to skip timer
+              setTimeLeft(0);
+              if (onSkipTimer) onSkipTimer();
             }}
-            className="w-full py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs sm:text-sm font-bold rounded-xl border border-white/10 transition-colors"
+            className="w-full py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs sm:text-sm font-bold rounded-xl border border-white/10 transition-colors active:scale-95"
           >
             Lewati Timer & Tampilkan Jawaban ({timeLeft}s) ⏭️
           </button>

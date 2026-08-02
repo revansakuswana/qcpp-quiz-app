@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Question } from '../../types/quiz';
 import { soundFx } from '../../lib/audio';
-import { Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { Clock, CheckCircle2, XCircle, Hourglass, Award } from 'lucide-react';
 
 interface PlayerQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
+  questionStartedAt?: number;
   onSubmitAnswer: (answerIndex: number, timeTaken: number) => void;
-  hasAnswered: boolean;
+  onTimeUp?: () => void;
   selectedAnswerIndex: number | null;
 }
 
@@ -39,113 +40,183 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
+  questionStartedAt,
   onSubmitAnswer,
-  hasAnswered,
+  onTimeUp,
   selectedAnswerIndex,
 }) => {
-  const timeLimit = question.time_limit || 20;
+  const timeLimit = question?.time_limit || 20;
   const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const [startTime] = useState<number>(Date.now());
+  const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(selectedAnswerIndex);
 
   useEffect(() => {
-    setTimeLeft(timeLimit);
-  }, [question, timeLimit]);
+    setLocalSelectedIdx(selectedAnswerIndex);
+  }, [selectedAnswerIndex]);
 
+  // Ultra-precise Wall-Clock Synchronized Timer
   useEffect(() => {
-    if (hasAnswered || timeLeft <= 0) return;
+    const calcTimeLeft = () => {
+      if (!questionStartedAt) return timeLimit;
+      const elapsed = Math.floor((Date.now() - questionStartedAt) / 1000);
+      return Math.max(0, timeLimit - elapsed);
+    };
+
+    const initialRemaining = calcTimeLeft();
+    setTimeLeft(initialRemaining);
+    if (initialRemaining <= 0 && onTimeUp) {
+      onTimeUp();
+    }
 
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        if (prev <= 5) {
-          soundFx.playTick();
-        }
-        return prev - 1;
-      });
-    }, 1000);
+      const remaining = calcTimeLeft();
+      setTimeLeft(remaining);
+      if (remaining <= 5 && remaining > 0) {
+        soundFx.playTick();
+      }
+      if (remaining <= 0) {
+        clearInterval(timer);
+        if (onTimeUp) onTimeUp();
+      }
+    }, 500);
 
     return () => clearInterval(timer);
-  }, [hasAnswered, timeLeft]);
+  }, [question, questionIndex, questionStartedAt, timeLimit, onTimeUp]);
 
   const handleSelectOption = (index: number) => {
-    if (hasAnswered || timeLeft <= 0) return;
+    if (timeLeft <= 0) return;
     soundFx.playClick();
+    setLocalSelectedIdx(index);
     const timeTaken = (Date.now() - startTime) / 1000;
     onSubmitAnswer(index, timeTaken);
   };
 
+  const isTimeUp = timeLeft <= 0;
   const progressPercent = (timeLeft / timeLimit) * 100;
 
+  const isCorrectAnswer = localSelectedIdx !== null && localSelectedIdx === question?.correct_option_index;
+  const isWrongAnswer = localSelectedIdx !== null && localSelectedIdx !== question?.correct_option_index;
+  const correctOptionText = question?.options[question?.correct_option_index] || '';
+
   return (
-    <div className="min-h-[85vh] flex flex-col justify-between max-w-4xl mx-auto p-4 sm:p-6">
+    <div className="min-h-[80vh] flex flex-col justify-between max-w-4xl mx-auto p-3 sm:p-6 space-y-4">
       {/* Top Question Header & Timer Bar */}
-      <div className="bg-[#240a5e] border border-white/20 rounded-3xl p-5 shadow-2xl text-center mb-6">
+      <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-5 shadow-2xl text-center">
         <div className="flex items-center justify-between text-xs font-bold text-purple-200 mb-2">
           <span>Pertanyaan {questionIndex + 1} dari {totalQuestions}</span>
-          <span className="flex items-center space-x-1 font-mono text-kahoot-yellow">
+          <span className="flex items-center space-x-1 font-mono text-kahoot-yellow text-sm sm:text-base">
             <Clock className="w-3.5 h-3.5" />
-            <span>{timeLeft}s</span>
+            <span>{isTimeUp ? '0s' : `${timeLeft}s`}</span>
           </span>
         </div>
 
         {/* Timer Bar Progress */}
-        <div className="w-full bg-black/40 h-3 rounded-full overflow-hidden p-0.5 border border-white/10 mb-4">
+        <div className="w-full bg-black/40 h-2.5 sm:h-3 rounded-full overflow-hidden p-0.5 border border-white/10 mb-3">
           <div
             className={`h-full rounded-full transition-all duration-1000 ${
-              timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-kahoot-yellow via-amber-400 to-emerald-400'
+              isTimeUp ? 'bg-rose-600' : timeLeft <= 5 ? 'bg-rose-500 animate-pulse' : 'bg-gradient-to-r from-kahoot-yellow via-amber-400 to-emerald-400'
             }`}
-            style={{ width: `${progressPercent}%` }}
+            style={{ width: isTimeUp ? '0%' : `${progressPercent}%` }}
           />
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-extrabold font-['Fredoka',sans-serif] text-white leading-tight">
-          {question.question_text}
+        <h2 className="text-lg sm:text-2xl font-extrabold font-['Fredoka',sans-serif] text-white leading-snug">
+          {question?.question_text}
         </h2>
       </div>
 
-      {/* Answer Buttons Grid (Kahoot Shapes & Colors) */}
-      {!hasAnswered ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-auto">
-          {question.options.map((optionText, idx) => {
-            const config = BUTTON_CONFIGS[idx % BUTTON_CONFIGS.length];
-            return (
-              <button
-                key={idx}
-                onClick={() => handleSelectOption(idx)}
-                disabled={hasAnswered || timeLeft <= 0}
-                className={`relative min-h-[110px] p-5 rounded-3xl flex items-center space-x-4 text-left transition-all transform hover:-translate-y-1 active:translate-y-0 shadow-2xl ${config.color}`}
-              >
-                <div className="w-12 h-12 rounded-2xl bg-black/20 flex items-center justify-center text-2xl font-black shrink-0 border border-white/20">
-                  {config.shape}
-                </div>
-                <span className="text-lg sm:text-xl font-bold leading-snug break-words">
+      {/* Answer Buttons Grid with Full Feedback on Time Up */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 my-auto">
+        {(question?.options || []).map((optionText, idx) => {
+          const config = BUTTON_CONFIGS[idx % BUTTON_CONFIGS.length];
+          const isSelected = localSelectedIdx === idx;
+          const isCorrectOption = idx === question?.correct_option_index;
+
+          return (
+            <button
+              key={idx}
+              onClick={() => handleSelectOption(idx)}
+              disabled={isTimeUp}
+              className={`relative min-h-[85px] sm:min-h-[110px] p-4 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center space-x-3 sm:space-x-4 text-left transition-all transform ${
+                isTimeUp
+                  ? isCorrectOption
+                    ? 'bg-emerald-600 text-white border-2 border-white ring-4 ring-emerald-300 shadow-2xl scale-[1.02] cursor-not-allowed font-extrabold'
+                    : isSelected
+                    ? 'bg-rose-600 text-white border-2 border-white ring-4 ring-rose-400 cursor-not-allowed font-bold opacity-90'
+                    : 'bg-white/10 text-purple-300/40 border border-white/10 cursor-not-allowed opacity-30'
+                  : isSelected
+                  ? `${config.color} ring-4 ring-white border-2 border-kahoot-yellow scale-[1.02] shadow-2xl brightness-110`
+                  : `${config.color} opacity-90 hover:opacity-100 active:scale-95`
+              }`}
+            >
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-black/20 flex items-center justify-center text-xl sm:text-2xl font-black shrink-0 border border-white/20">
+                {config.shape}
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm sm:text-xl font-bold leading-snug break-words block">
                   {optionText}
                 </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        /* Waiting / Answer Submitted State */
-        <div className="bg-[#240a5e] border border-white/20 rounded-3xl p-8 text-center my-auto shadow-2xl">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-kahoot-purple flex items-center justify-center text-4xl shadow-xl mb-4 border border-white/20 animate-bounce">
-            {selectedAnswerIndex !== null ? BUTTON_CONFIGS[selectedAnswerIndex % 4].shape : '⏳'}
-          </div>
-          <h3 className="text-2xl font-black text-white font-['Fredoka',sans-serif]">
-            Jawaban Terkirim!
-          </h3>
-          <p className="text-sm text-purple-200 mt-2 max-w-xs mx-auto">
-            Menunggu peserta lain menjawab dan Host melanjutkan ke hasil...
-          </p>
-        </div>
-      )}
+                {isTimeUp ? (
+                  isCorrectOption ? (
+                    <span className="inline-flex items-center space-x-1 text-[10px] sm:text-xs font-black text-emerald-200 mt-1 bg-black/40 px-2 py-0.5 rounded-full border border-emerald-300/50 animate-bounce-short">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>JAWABAN BENAR 🏆</span>
+                    </span>
+                  ) : isSelected ? (
+                    <span className="inline-flex items-center space-x-1 text-[10px] sm:text-xs font-black text-rose-200 mt-1 bg-black/40 px-2 py-0.5 rounded-full border border-rose-300/50">
+                      <XCircle className="w-3.5 h-3.5 text-rose-300" />
+                      <span>PILIHAN KAMU (SALAH)</span>
+                    </span>
+                  ) : null
+                ) : isSelected ? (
+                  <span className="inline-flex items-center space-x-1 text-[10px] sm:text-xs font-black text-amber-300 mt-1 bg-black/30 px-2 py-0.5 rounded-full border border-amber-400/40">
+                    <CheckCircle2 className="w-3 h-3 text-amber-300" />
+                    <span>Jawaban Dipilih (Dapat diubah)</span>
+                  </span>
+                ) : null}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Footer Info */}
-      <div className="text-center mt-6 text-xs text-purple-300">
-        <span>Tekan tombol warna yang menurut Anda benar secepat mungkin untuk bonus poin!</span>
+      {/* Answer Feedback Banner (Shows Result when Time Up / Skipped) */}
+      <div className="bg-[#240a5e] border border-white/20 rounded-xl p-3.5 text-center text-xs font-semibold text-purple-200 shadow-xl">
+        {isTimeUp ? (
+          isCorrectAnswer ? (
+            <div className="flex items-center justify-center space-x-2 text-emerald-300 font-extrabold text-sm sm:text-base">
+              <Award className="w-5 h-5 text-emerald-400 animate-bounce" />
+              <span>🎉 HEBAT! JAWABAN KAMU BENAR! (+1000 POIN)</span>
+            </div>
+          ) : isWrongAnswer ? (
+            <div className="flex flex-col items-center space-y-1 text-rose-300 font-bold text-xs sm:text-sm">
+              <span className="flex items-center space-x-1 text-rose-400">
+                <XCircle className="w-4 h-4" />
+                <span>JAWABAN KAMU BELUM TEPAT</span>
+              </span>
+              <span className="text-purple-200 text-[11px] font-normal">
+                Jawaban yang benar adalah: <strong className="text-emerald-300">{correctOptionText}</strong>
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center space-y-1 text-amber-300 font-bold text-xs sm:text-sm">
+              <span className="flex items-center space-x-1 text-amber-400">
+                <Hourglass className="w-4 h-4" />
+                <span>WAKTU HABIS! KAMU BELUM MEMILIH JAWABAN</span>
+              </span>
+              <span className="text-purple-200 text-[11px] font-normal">
+                Jawaban yang benar adalah: <strong className="text-emerald-300">{correctOptionText}</strong>
+              </span>
+            </div>
+          )
+        ) : localSelectedIdx !== null ? (
+          <span className="text-emerald-300 flex items-center justify-center space-x-1.5 font-bold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Jawaban Anda tersimpan! Pilihan dapat diubah hingga waktu habis.</span>
+          </span>
+        ) : (
+          <span>Pilih salah satu jawaban di atas sebelum waktu ({timeLeft}s) habis!</span>
+        )}
       </div>
     </div>
   );
