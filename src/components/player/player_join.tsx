@@ -125,7 +125,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
                 maxLength={6}
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                placeholder="PIN 123456"
+                placeholder="Contoh: 123456"
                 className="w-full text-center text-2xl sm:text-3xl font-black tracking-widest px-3 py-3 sm:py-4 bg-white/10 border border-white/20 rounded-xl sm:rounded-2xl text-qcpp-yellow placeholder-purple-300/30 placeholder:text-base sm:placeholder:text-2xl focus:outline-none focus:ring-2 focus:ring-qcpp-yellow focus:bg-white/20 transition-all font-mono"
                 autoFocus
                 required

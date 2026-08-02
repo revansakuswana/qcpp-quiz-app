@@ -143,31 +143,6 @@ const MOCK_QUIZZES: Quiz[] = [
         points: 1000,
       }
     ]
-  },
-  {
-    id: 'quiz-1',
-    title: 'Pengetahuan Umum Indonesia 🇮🇩',
-    description: 'Uji wawasan umum kamu tentang budaya, sejarah, dan geografi Indonesia!',
-    code: 'IDN101',
-    allowed_participants: INITIAL_PARTICIPANT_NAMES.slice(0, 35),
-    questions: [
-      {
-        id: 'q1',
-        question_text: 'Apa nama ibu kota negara Indonesia saat ini?',
-        options: ['Surabaya', 'DKI Jakarta', 'Bandung', 'Medan'],
-        correct_option_index: 1,
-        time_limit: 15,
-        points: 1000,
-      },
-      {
-        id: 'q2',
-        question_text: 'Lagu kebangsaan Indonesia Raya diciptakan oleh siapa?',
-        options: ['W.R. Supratman', 'Ismail Marzuki', 'C. Simanjuntak', 'Kusbini'],
-        correct_option_index: 0,
-        time_limit: 20,
-        points: 1000,
-      }
-    ]
   }
 ];
 
@@ -453,6 +428,24 @@ export async function joinGameSession(pin: string, participantName: string, avat
     streak: 0,
   };
 
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('session_participants')
+        .upsert(
+          [{ session_id: session.id, participant_name: participantName, avatar, score: 0, streak: 0 }],
+          { onConflict: 'session_id,participant_name' }
+        )
+        .select()
+        .single();
+      if (!error && data) {
+        newPart.id = data.id;
+      }
+    } catch (err) {
+      console.warn('Supabase join failed, falling back to local memory:', err);
+    }
+  }
+
   if (!mockSessionParticipantsStore[session.id]) {
     mockSessionParticipantsStore[session.id] = [];
   }
@@ -464,7 +457,7 @@ export async function joinGameSession(pin: string, participantName: string, avat
     mockSessionParticipantsStore[session.id].push(newPart);
   }
 
-  // Broadcast join event
+  // Broadcast join event locally
   notifyMockListeners(`session-${session.id}`, {
     type: 'PLAYER_JOINED',
     participants: mockSessionParticipantsStore[session.id],
@@ -472,11 +465,40 @@ export async function joinGameSession(pin: string, participantName: string, avat
 
   return {
     session,
-    participant: mockSessionParticipantsStore[session.id].find((p) => p.participant_name === participantName) || newPart,
+    participant: newPart,
   };
 }
 
+export async function fetchSessionParticipants(sessionId: string): Promise<SessionParticipant[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('session_participants')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true });
+      if (!error && data && data.length > 0) {
+        return data as SessionParticipant[];
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return mockSessionParticipantsStore[sessionId] || [];
+}
+
 export async function updateSessionStatus(sessionId: string, status: GameSession['status'], questionIndex?: number) {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from('game_sessions')
+        .update({ status, current_question_index: questionIndex ?? 0 })
+        .eq('id', sessionId);
+    } catch {
+      // Fallback
+    }
+  }
+
   Object.values(mockSessionsStore).forEach((s) => {
     if (s.id === sessionId) {
       s.status = status;
@@ -513,6 +535,42 @@ export async function submitPlayerAnswer(
     time_taken: timeTaken,
   };
 
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('player_answers').insert([
+        {
+          session_id: sessionId,
+          question_id: questionId,
+          participant_name: participantName,
+          answer_index: answerIndex,
+          is_correct: isCorrect,
+          points_earned: pointsEarned,
+          time_taken: timeTaken,
+        }
+      ]);
+
+      // Increment score in Supabase
+      const { data: currentPart } = await supabase
+        .from('session_participants')
+        .select('score, streak')
+        .eq('session_id', sessionId)
+        .eq('participant_name', participantName)
+        .single();
+
+      if (currentPart) {
+        const newScore = (currentPart.score || 0) + (isCorrect ? pointsEarned : 0);
+        const newStreak = isCorrect ? (currentPart.streak || 0) + 1 : 0;
+        await supabase
+          .from('session_participants')
+          .update({ score: newScore, streak: newStreak })
+          .eq('session_id', sessionId)
+          .eq('participant_name', participantName);
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
   if (!mockPlayerAnswersStore[sessionId]) {
     mockPlayerAnswersStore[sessionId] = [];
   }
@@ -543,6 +601,50 @@ export async function submitPlayerAnswer(
 }
 
 export function subscribeToSession(sessionId: string, callback: ListenerCallback) {
+  let channel: any = null;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      channel = supabase
+        .channel(`room-${sessionId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` },
+          async () => {
+            const updated = await fetchSessionParticipants(sessionId);
+            callback({ type: 'PLAYER_JOINED', participants: updated });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+          (payload: any) => {
+            callback({
+              type: 'SESSION_UPDATED',
+              status: payload.new?.status,
+              questionIndex: payload.new?.current_question_index,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'player_answers', filter: `session_id=eq.${sessionId}` },
+          async (payload: any) => {
+            const updated = await fetchSessionParticipants(sessionId);
+            callback({
+              type: 'ANSWER_SUBMITTED',
+              answer: payload.new,
+              participants: updated,
+            });
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('Supabase Realtime subscription error:', err);
+    }
+  }
+
+  // Also register local broadcaster fallback
   const channelKey = `session-${sessionId}`;
   if (!mockBroadcasters[channelKey]) {
     mockBroadcasters[channelKey] = new Set();
@@ -550,6 +652,9 @@ export function subscribeToSession(sessionId: string, callback: ListenerCallback
   mockBroadcasters[channelKey].add(callback);
 
   return () => {
+    if (channel && supabase) {
+      supabase.removeChannel(channel);
+    }
     if (mockBroadcasters[channelKey]) {
       mockBroadcasters[channelKey].delete(callback);
     }

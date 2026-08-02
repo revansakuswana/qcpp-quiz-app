@@ -23,23 +23,34 @@ import {
   subscribeToSession,
   getSessionParticipants,
   getPlayerAnswersForQuestion,
+  fetchSessionParticipants,
+  verifyGameSessionPin,
 } from "./lib/supabase";
 import { soundFx } from "./lib/audio";
 
+const STORAGE_KEYS = {
+  HOST_AUTH: "qcpp_host_auth",
+  ACTIVE_HOST_SESSION: "qcpp_active_host_session",
+  ACTIVE_PLAYER_SESSION: "qcpp_active_player_session",
+};
+
 export const App: React.FC = () => {
-  // Navigation & Host Authentication State
+  // Navigation & Host Authentication State (Persists across refresh)
   const [activeMode, setActiveMode] = useState<"player" | "host" | "editor">(
-    "player",
+    "player"
   );
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
   const [isHostAuthenticated, setIsHostAuthenticated] = useState<boolean>(
     () => {
-      return sessionStorage.getItem("kahoot_host_auth") === "true";
-    },
+      return (
+        localStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true" ||
+        sessionStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true"
+      );
+    }
   );
   const [showHostAuthModal, setShowHostAuthModal] = useState<boolean>(false);
   const [pendingMode, setPendingMode] = useState<"host" | "editor" | null>(
-    null,
+    null
   );
 
   // Quizzes Data
@@ -53,7 +64,7 @@ export const App: React.FC = () => {
   const [hostCurrentQuestionIdx, setHostCurrentQuestionIdx] =
     useState<number>(0);
   const [hostCurrentAnswers, setHostCurrentAnswers] = useState<PlayerAnswer[]>(
-    [],
+    []
   );
   const [hostStep, setHostStep] = useState<
     "LOBBY" | "QUESTION" | "LEADERBOARD"
@@ -71,7 +82,7 @@ export const App: React.FC = () => {
   >([]);
   const [hasAnsweredCurrent, setHasAnsweredCurrent] = useState<boolean>(false);
   const [selectedAnswerIdx, setSelectedAnswerIdx] = useState<number | null>(
-    null,
+    null
   );
   const [lastResult, setLastResult] = useState<{
     isCorrect: boolean;
@@ -81,13 +92,62 @@ export const App: React.FC = () => {
     correctText: string;
   } | null>(null);
 
-  // Load Initial Quizzes
+  // Load Initial Quizzes & Restore Active Sessions on Refresh
   useEffect(() => {
-    async function loadQuizzes() {
+    async function initApp() {
       const list = await fetchQuizzes();
       setQuizzes(list);
+
+      // 1. Restore Active Host Session on Refresh if authenticated
+      const savedHostSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
+      if (savedHostSession) {
+        try {
+          const parsed = JSON.parse(savedHostSession);
+          if (parsed && parsed.pin) {
+            const validSession = await verifyGameSessionPin(parsed.pin);
+            if (validSession) {
+              setHostSession(validSession);
+              setHostCurrentQuestionIdx(parsed.questionIndex || 0);
+              setHostStep(parsed.step || "LOBBY");
+
+              const parts = await fetchSessionParticipants(validSession.id);
+              setHostParticipants(parts);
+
+              // Auto switch to host mode on refresh if host was active
+              if (localStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true") {
+                setActiveMode("host");
+              }
+            }
+          }
+        } catch {
+          localStorage.removeItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
+        }
+      }
+
+      // 2. Restore Active Player Session on Refresh
+      const savedPlayerSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
+      if (savedPlayerSession) {
+        try {
+          const parsed = JSON.parse(savedPlayerSession);
+          if (parsed && parsed.pin && parsed.participantName) {
+            const validSession = await verifyGameSessionPin(parsed.pin);
+            if (validSession) {
+              setPlayerPin(parsed.pin);
+              setParticipantName(parsed.participantName);
+              setPlayerAvatar(parsed.avatar || "🚀");
+              setPlayerStep(parsed.step || "WAITING");
+
+              const parts = await fetchSessionParticipants(validSession.id);
+              setPlayerRoomParticipants(parts);
+            }
+          }
+        } catch {
+          localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
+        }
+      }
     }
-    loadQuizzes();
+
+    initApp();
   }, []);
 
   // Audio Toggle
@@ -115,7 +175,8 @@ export const App: React.FC = () => {
 
   const handleHostAuthSuccess = () => {
     setIsHostAuthenticated(true);
-    sessionStorage.setItem("qcpp_host_auth", "true");
+    localStorage.setItem(STORAGE_KEYS.HOST_AUTH, "true");
+    sessionStorage.setItem(STORAGE_KEYS.HOST_AUTH, "true");
     setShowHostAuthModal(false);
     if (pendingMode) {
       setActiveMode(pendingMode);
@@ -127,13 +188,16 @@ export const App: React.FC = () => {
 
   const handleHostLogout = () => {
     setIsHostAuthenticated(false);
-    sessionStorage.removeItem("qcpp_host_auth");
+    localStorage.removeItem(STORAGE_KEYS.HOST_AUTH);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
+    sessionStorage.removeItem(STORAGE_KEYS.HOST_AUTH);
+    setHostSession(null);
     setActiveMode("player");
     soundFx.playClick();
   };
 
   // ==========================================
-  // HOST ACTIONS
+  // HOST ACTIONS & PERSISTENCE
   // ==========================================
 
   const handleSelectQuizToHost = async (quizId: string) => {
@@ -150,21 +214,50 @@ export const App: React.FC = () => {
     setHostStep("LOBBY");
     setActiveMode("host");
 
+    // Persist Host Session state across refreshes
+    localStorage.setItem(
+      STORAGE_KEYS.ACTIVE_HOST_SESSION,
+      JSON.stringify({
+        id: session.id,
+        pin: session.pin,
+        quizId: session.quiz_id,
+        step: "LOBBY",
+        questionIndex: 0,
+      })
+    );
+
     // Subscribe to player join events
     subscribeToSession(session.id, (event: any) => {
       if (event.type === "PLAYER_JOINED" || event.type === "ANSWER_SUBMITTED") {
-        setHostParticipants([...event.participants]);
+        if (event.participants && event.participants.length > 0) {
+          setHostParticipants([...event.participants]);
+        }
         if (event.type === "ANSWER_SUBMITTED") {
           const currentQ = session.quiz?.questions[hostCurrentQuestionIdx];
           if (currentQ) {
             setHostCurrentAnswers(
-              getPlayerAnswersForQuestion(session.id, currentQ.id),
+              getPlayerAnswersForQuestion(session.id, currentQ.id)
             );
           }
         }
       }
     });
   };
+
+  // Cross-Device Auto-Sync Interval (Polls Supabase DB every 2 seconds for new players)
+  useEffect(() => {
+    if (!hostSession) return;
+    async function syncParticipants() {
+      const liveList = await fetchSessionParticipants(hostSession.id);
+      if (liveList && liveList.length >= 0) {
+        setHostParticipants(liveList);
+      }
+    }
+
+    syncParticipants();
+    const interval = setInterval(syncParticipants, 2000);
+    return () => clearInterval(interval);
+  }, [hostSession]);
 
   const handleHostStartQuiz = async () => {
     if (!hostSession) return;
@@ -174,6 +267,18 @@ export const App: React.FC = () => {
     if (q0) {
       setHostCurrentAnswers(getPlayerAnswersForQuestion(hostSession.id, q0.id));
     }
+
+    localStorage.setItem(
+      STORAGE_KEYS.ACTIVE_HOST_SESSION,
+      JSON.stringify({
+        id: hostSession.id,
+        pin: hostSession.pin,
+        quizId: hostSession.quiz_id,
+        step: "QUESTION",
+        questionIndex: 0,
+      })
+    );
+
     await updateSessionStatus(hostSession.id, "QUESTION", 0);
   };
 
@@ -186,17 +291,39 @@ export const App: React.FC = () => {
       setHostCurrentQuestionIdx(nextIdx);
       const nextQ = hostSession.quiz.questions[nextIdx];
       setHostCurrentAnswers(
-        getPlayerAnswersForQuestion(hostSession.id, nextQ.id),
+        getPlayerAnswersForQuestion(hostSession.id, nextQ.id)
       );
+
+      localStorage.setItem(
+        STORAGE_KEYS.ACTIVE_HOST_SESSION,
+        JSON.stringify({
+          id: hostSession.id,
+          pin: hostSession.pin,
+          quizId: hostSession.quiz_id,
+          step: "QUESTION",
+          questionIndex: nextIdx,
+        })
+      );
+
       await updateSessionStatus(hostSession.id, "QUESTION", nextIdx);
     } else {
       setHostStep("LEADERBOARD");
+      localStorage.setItem(
+        STORAGE_KEYS.ACTIVE_HOST_SESSION,
+        JSON.stringify({
+          id: hostSession.id,
+          pin: hostSession.pin,
+          quizId: hostSession.quiz_id,
+          step: "LEADERBOARD",
+          questionIndex: hostCurrentQuestionIdx,
+        })
+      );
       await updateSessionStatus(hostSession.id, "FINISHED");
     }
   };
 
   // ==========================================
-  // PLAYER ACTIONS
+  // PLAYER ACTIONS & PERSISTENCE
   // ==========================================
 
   const handlePlayerJoined = (pin: string, pName: string, avatar: string) => {
@@ -204,6 +331,17 @@ export const App: React.FC = () => {
     setParticipantName(pName);
     setPlayerAvatar(avatar);
     setPlayerStep("WAITING");
+
+    // Persist Player Session state across refreshes
+    localStorage.setItem(
+      STORAGE_KEYS.ACTIVE_PLAYER_SESSION,
+      JSON.stringify({
+        pin,
+        participantName: pName,
+        avatar,
+        step: "WAITING",
+      })
+    );
 
     // Find local or hosted session reference
     const sessId = hostSession?.pin === pin ? hostSession.id : `sess-${pin}`;
@@ -227,7 +365,7 @@ export const App: React.FC = () => {
 
   const handlePlayerSubmitAnswer = async (
     answerIndex: number,
-    timeTaken: number,
+    timeTaken: number
   ) => {
     if (!hostSession || !hostSession.quiz) return;
     const currentQ = hostSession.quiz.questions[hostCurrentQuestionIdx];
@@ -239,7 +377,7 @@ export const App: React.FC = () => {
     const isCorrect = answerIndex === currentQ.correct_option_index;
     const speedRatio = Math.max(
       0,
-      (currentQ.time_limit - timeTaken) / currentQ.time_limit,
+      (currentQ.time_limit - timeTaken) / currentQ.time_limit
     );
     const pointsEarned = isCorrect
       ? Math.round(currentQ.points * (0.5 + 0.5 * speedRatio))
@@ -252,12 +390,12 @@ export const App: React.FC = () => {
       answerIndex,
       isCorrect,
       pointsEarned,
-      timeTaken,
+      timeTaken
     );
 
     const updatedParts = getSessionParticipants(hostSession.id);
     const myStats = updatedParts.find(
-      (p) => p.participant_name === participantName,
+      (p) => p.participant_name === participantName
     );
 
     setLastResult({
@@ -331,6 +469,7 @@ export const App: React.FC = () => {
               <HostLeaderboard
                 participants={hostParticipants}
                 onPlayAgain={() => {
+                  localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
                   setPlayerStep("JOIN");
                 }}
               />
@@ -375,6 +514,7 @@ export const App: React.FC = () => {
                   <HostLeaderboard
                     participants={hostParticipants}
                     onPlayAgain={() => {
+                      localStorage.removeItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
                       setHostSession(null);
                       setHostStep("LOBBY");
                     }}
