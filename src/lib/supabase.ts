@@ -27,7 +27,13 @@ export const INITIAL_PARTICIPANT_NAMES = [
   'Tedi Hadi Suryanto', 'Agus Tiawan', 'Muhammad Dedy Prasetyo', 'Dicky Agastian', 'Yogi Sektiawan Pranoto',
   'Ivan Rivandi', 'Solikhin', 'Wahyu Darmawan', 'Ardi Abdul Majid', 'Ridho Jula Ariyanto',
   'Susilo', 'Dimas Ramadhiansyah', 'Ahmad Hafif Fauzi', 'Wiyatno', 'Achmad Inzan Masruri',
-  'Ari Saputra'
+  'Ari Saputra',
+  // Peserta Baru Tambahan
+  'I Nengah Aryata', 'Rafika Dewi', 'M Iqbal Maulana', 'Anggi Agung Pambudi', 'Yohan Yogaswara',
+  'Indra Yulianto', 'Rizka Esty Wulandari', 'Sugiyanto', 'Andri Tri Wicaksono', 'Zakiyatun Nafsiah',
+  'Yahya Maulana', 'Sylfaa Aalimatul H', 'Revansa Helsa Kuswana', 'Reza Adi Saputra', 'Pandu Wiratama',
+  'Annisa Indrani', 'Merry Nafisa', 'Dwi Handoyo', 'Erlangga Dwi Jiwantoro', 'Sylfaa Aalimatul Haqqi',
+  'M Aldi Darmawan'
 ];
 
 const MOCK_QUIZZES: Quiz[] = [
