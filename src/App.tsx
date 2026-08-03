@@ -27,6 +27,7 @@ import {
   fetchPlayerAnswersForQuestion,
   fetchSessionParticipants,
   verifyGameSessionPin,
+  leaveGameSession,
 } from "./lib/supabase";
 import { soundFx } from "./lib/audio";
 
@@ -443,6 +444,23 @@ export const App: React.FC = () => {
     });
   };
 
+  const handlePlayerExitRoom = async () => {
+    const activeSessId = playerSessionId || hostSession?.id;
+    if (activeSessId && participantName) {
+      await leaveGameSession(activeSessId, participantName);
+    }
+
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_PLAYER_SESSION);
+    setPlayerPin("");
+    setParticipantName("");
+    setPlayerSessionId("");
+    setPlayerQuiz(null);
+    setPlayerQuestionIdx(0);
+    setPlayerStep("JOIN");
+    setSelectedAnswerIdx(null);
+    setHasAnsweredCurrent(false);
+  };
+
   // 1.5-Second Live Polling for Player Game Session Status (Game Start & Question Switch)
   useEffect(() => {
     if (activeMode !== "player" || playerStep === "JOIN" || !playerPin) return;
@@ -607,6 +625,7 @@ export const App: React.FC = () => {
                     ? playerRoomParticipants
                     : hostParticipants
                 }
+                onExitRoom={handlePlayerExitRoom}
               />
             )}
 

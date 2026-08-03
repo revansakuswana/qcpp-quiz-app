@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Save, Sparkles, BookOpen, Users } from 'lucide-react';
+import { Plus, Trash2, Save, BookOpen, Users, Clock, AlertTriangle } from 'lucide-react';
 import { Quiz, Question } from '../../types/quiz';
 import { createQuiz, INITIAL_PARTICIPANT_NAMES } from '../../lib/supabase';
 import { soundFx } from '../../lib/audio';
@@ -23,11 +23,13 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
       question_text: 'Contoh: Apa ibu kota negara Indonesia?',
       options: ['Surabaya', 'DKI Jakarta', 'Bandung', 'Medan'],
       correct_option_index: 1,
-      time_limit: 15,
+      time_limit: 30,
       points: 1000,
     },
   ]);
   const [saving, setSaving] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleAddQuestion = () => {
     soundFx.playClick();
@@ -37,7 +39,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
         question_text: '',
         options: ['', '', '', ''],
         correct_option_index: 0,
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
     ]);
@@ -69,13 +71,18 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
 
   const handleSaveQuiz = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
     if (!title.trim()) {
-      alert('Masukkan judul quiz terlebih dahulu!');
+      soundFx.playWrong();
+      setErrorMessage('Masukkan judul quiz terlebih dahulu!');
       return;
     }
     for (let i = 0; i < questions.length; i++) {
       if (!questions[i].question_text.trim()) {
-        alert(`Teks pertanyaan ke-${i + 1} tidak boleh kosong!`);
+        soundFx.playWrong();
+        setErrorMessage(`Teks pertanyaan ke-${i + 1} tidak boleh kosong!`);
         return;
       }
     }
@@ -104,17 +111,53 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
     });
 
     setSaving(false);
+    setSuccessMessage(`Kuis "${saved.title}" berhasil disimpan! Kuis baru Anda telah ditambahkan ke daftar kuis terdaftar.`);
+    
+    // Clear form
+    setTitle('');
+    setDescription('');
+
+    // Update list without starting room immediately
     onQuizCreated(saved);
   };
 
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-8">
+      {/* Error Validation Notification Banner */}
+      {errorMessage && (
+        <div className="bg-rose-600/90 border-2 border-rose-300 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between text-xs sm:text-sm font-bold animate-bounce-short">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-200 shrink-0" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="ml-3 px-2 py-1 bg-black/30 hover:bg-black/50 text-white rounded-lg border border-white/20 text-xs font-bold shrink-0"
+          >
+            Tutup ✕
+          </button>
+        </div>
+      )}
+
+      {/* Success Notification Banner */}
+      {successMessage && (
+        <div className="bg-emerald-600/90 border-2 border-emerald-300 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between text-xs sm:text-sm font-bold animate-bounce-short">
+          <span>{successMessage}</span>
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="ml-3 px-2 py-1 bg-black/30 hover:bg-black/50 text-white rounded-lg border border-white/20 text-xs font-bold shrink-0"
+          >
+            Tutup ✕
+          </button>
+        </div>
+      )}
+
       {/* Existing Preset Quizzes Card */}
       <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
         <div className="flex items-center space-x-2 mb-3 sm:mb-4">
           <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow shrink-0" />
           <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white">
-            Pilih Quiz Terdaftar (Preset Demo)
+            Pilih Quiz Terdaftar & Mulai Kuis
           </h2>
         </div>
 
@@ -159,49 +202,46 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                   soundFx.playClick();
                   onSelectExistingQuiz(q.id);
                 }}
-                className="mt-3 w-full py-2 sm:py-2.5 bg-qcpp-blue hover:bg-qcpp-blueHover text-white font-bold rounded-xl text-xs shadow-md transition-all active:scale-95 flex items-center justify-center space-x-1.5"
+                className="mt-4 w-full py-2 sm:py-2.5 bg-qcpp-yellow hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center space-x-1.5"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Gunakan & Host Quiz Ini</span>
+                <span>Mulai Kuis Ini</span>
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Create New Custom Quiz Form */}
-      <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-8 shadow-xl">
-        <div className="flex items-center space-x-2 mb-4 sm:mb-6">
-          <Plus className="w-5 h-5 sm:w-6 sm:h-6 text-qcpp-green shrink-0" />
-          <h2 className="text-lg sm:text-2xl font-bold font-['Fredoka',sans-serif] text-white">
-            Buat Quiz Baru
-          </h2>
-        </div>
+      {/* Quiz Creator Form Card */}
+      <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+        <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white mb-4 flex items-center space-x-2">
+          <Plus className="w-5 h-5 text-qcpp-yellow" />
+          <span>Buat Quiz Baru</span>
+        </h2>
 
         <form onSubmit={handleSaveQuiz} className="space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-[11px] sm:text-xs font-bold uppercase text-purple-200 mb-1">
-                Judul Quiz
+                Judul Kuis *
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Judul Quiz..."
-                className="w-full px-3 py-2 sm:px-4 sm:py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-purple-300/40 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-qcpp-yellow"
+                placeholder="Contoh: Evaluasi Kesiapan Lahan 2026..."
+                className="w-full px-3 py-2 sm:px-4 sm:py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-purple-300/40 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-qcpp-yellow font-bold"
                 required
               />
             </div>
             <div>
               <label className="block text-[11px] sm:text-xs font-bold uppercase text-purple-200 mb-1">
-                Deskripsi Singkat
+                Deskripsi Kuis
               </label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Deskripsi..."
+                placeholder="Deskripsi singkat..."
                 className="w-full px-3 py-2 sm:px-4 sm:py-2.5 bg-white/10 border border-white/20 rounded-xl text-white placeholder-purple-300/40 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-qcpp-yellow"
               />
             </div>
@@ -211,10 +251,10 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
           <div className="p-3 sm:p-4 bg-black/20 rounded-xl sm:rounded-2xl border border-white/10">
             <label className="block text-[11px] sm:text-xs font-bold uppercase text-qcpp-yellow mb-1 flex items-center space-x-1.5">
               <Users className="w-3.5 h-3.5" />
-              <span>Peserta Khusus ({INITIAL_PARTICIPANT_NAMES.length} Peserta)</span>
+              <span>Daftar Peserta Terdaftar ({INITIAL_PARTICIPANT_NAMES.length} Peserta)</span>
             </label>
             <p className="text-[10px] sm:text-[11px] text-purple-200 mb-2 leading-relaxed">
-              Nama-nama berikut akan muncul di dropdown room. Pisahkan dengan koma:
+              Nama-nama berikut dapat memilih nama saat masuk kuis. Pisahkan dengan koma:
             </p>
             <textarea
               rows={3}
@@ -228,7 +268,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
           {/* Question Cards List */}
           <div className="space-y-4 sm:space-y-6 pt-3 border-t border-white/10">
             <h3 className="text-base sm:text-lg font-bold text-white flex items-center justify-between">
-              <span>Daftar Soal ({questions.length})</span>
+              <span>Daftar Soal Pertanyaan ({questions.length})</span>
               <button
                 type="button"
                 onClick={handleAddQuestion}
@@ -242,9 +282,31 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
             {questions.map((q, qIdx) => (
               <div key={qIdx} className="p-3.5 sm:p-5 bg-black/20 rounded-xl sm:rounded-2xl border border-white/10 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-qcpp-yellow">
-                    Soal #{qIdx + 1}
-                  </span>
+                  <div className="flex items-center space-x-3">
+                    <span className="text-xs font-bold text-qcpp-yellow">
+                      Soal #{qIdx + 1}
+                    </span>
+
+                    {/* Question Time Limit Duration Selector */}
+                    <div className="flex items-center space-x-1.5 bg-black/40 px-2.5 py-1 rounded-lg border border-white/10">
+                      <Clock className="w-3.5 h-3.5 text-qcpp-yellow" />
+                      <span className="text-[11px] font-bold text-purple-200">Durasi:</span>
+                      <select
+                        value={q.time_limit}
+                        onChange={(e) => handleQuestionChange(qIdx, 'time_limit', Number(e.target.value))}
+                        className="bg-transparent text-xs font-extrabold text-qcpp-yellow focus:outline-none cursor-pointer"
+                      >
+                        <option value={10} className="bg-[#240a5e] text-white">10 Detik</option>
+                        <option value={20} className="bg-[#240a5e] text-white">20 Detik</option>
+                        <option value={30} className="bg-[#240a5e] text-white">30 Detik (Standar)</option>
+                        <option value={45} className="bg-[#240a5e] text-white">45 Detik</option>
+                        <option value={60} className="bg-[#240a5e] text-white">60 Detik</option>
+                        <option value={90} className="bg-[#240a5e] text-white">90 Detik</option>
+                        <option value={120} className="bg-[#240a5e] text-white">120 Detik</option>
+                      </select>
+                    </div>
+                  </div>
+
                   {questions.length > 1 && (
                     <button
                       type="button"
@@ -296,10 +358,10 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-3 sm:py-4 bg-gradient-to-r from-qcpp-green to-emerald-600 hover:from-emerald-500 hover:to-qcpp-green text-white font-extrabold text-sm sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-qcpp-green/30 active:scale-95 transition-all flex items-center justify-center space-x-2"
+            className="w-full py-3.5 sm:py-4 bg-gradient-to-r from-qcpp-purple to-purple-800 hover:from-purple-700 hover:to-qcpp-purple border-2 border-purple-400/50 text-white font-extrabold text-sm sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-purple-900/40 active:scale-95 transition-all flex items-center justify-center space-x-2"
           >
-            <Save className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span>{saving ? 'Menyimpan...' : 'Simpan & Mulai Host'}</span>
+            <Save className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow" />
+            <span>{saving ? 'Menyimpan Kuis...' : 'Simpan Kuis (Tanpa Memulai) 💾'}</span>
           </button>
         </form>
       </div>

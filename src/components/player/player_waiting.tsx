@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Users, Radio } from 'lucide-react';
+import { Loader2, Users, Radio, LogOut } from 'lucide-react';
 import { SessionParticipant } from '../../types/quiz';
 import { fetchSessionParticipants } from '../../lib/supabase';
+import { soundFx } from '../../lib/audio';
 
 interface PlayerWaitingProps {
   pin: string;
   participantName: string;
   avatar: string;
   participants: SessionParticipant[];
+  onExitRoom?: () => void;
 }
 
 export const PlayerWaiting: React.FC<PlayerWaitingProps> = ({
@@ -15,6 +17,7 @@ export const PlayerWaiting: React.FC<PlayerWaitingProps> = ({
   participantName,
   avatar,
   participants,
+  onExitRoom,
 }) => {
   const [liveList, setLiveList] = useState<SessionParticipant[]>(participants || []);
 
@@ -64,11 +67,11 @@ export const PlayerWaiting: React.FC<PlayerWaitingProps> = ({
         </h2>
 
         <p className="text-xs sm:text-sm text-purple-200 mt-1.5 max-w-xs mx-auto">
-          Anda sudah masuk ke room quiz. Bersiaplah! Host akan segera memulai permainan.
+          Anda telah masuk ke dalam room. Bersiaplah! Host akan segera memulai kuis.
         </p>
 
         {/* Loading Spinner Indicator */}
-        <div className="my-6 sm:my-8 flex flex-col items-center justify-center space-y-2">
+        <div className="my-5 sm:my-6 flex flex-col items-center justify-center space-y-2">
           <Loader2 className="w-7 h-7 sm:w-8 sm:h-8 text-kahoot-yellow animate-spin" />
           <span className="text-xs font-semibold text-purple-300">Menunggu Host memulai quiz...</span>
         </div>
@@ -102,6 +105,21 @@ export const PlayerWaiting: React.FC<PlayerWaitingProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Exit Room / Change Account Button */}
+        {onExitRoom && (
+          <button
+            type="button"
+            onClick={() => {
+              soundFx.playClick();
+              onExitRoom();
+            }}
+            className="mt-4 sm:mt-5 w-full py-2.5 px-4 bg-white/10 hover:bg-rose-500/20 text-purple-200 hover:text-rose-300 border border-white/15 hover:border-rose-400/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 active:scale-95"
+          >
+            <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Keluar dari Room / Ganti Akun 🚪</span>
+          </button>
+        )}
       </div>
     </div>
   );

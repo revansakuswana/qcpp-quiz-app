@@ -43,14 +43,14 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   onSubmitAnswer,
   selectedAnswerIndex,
 }) => {
-  const timeLimit = question?.time_limit || 20;
+  const timeLimit = question?.time_limit || 30;
   const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const [startTime] = useState<number>(Date.now());
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(selectedAnswerIndex);
 
   // Reset timer ONLY when question changes
   useEffect(() => {
-    setTimeLeft(question?.time_limit || 20);
+    setTimeLeft(question?.time_limit || 30);
   }, [questionIndex, question?.id]);
 
   // Sync selected answer index without touching timer

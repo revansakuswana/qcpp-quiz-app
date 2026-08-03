@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Search, Plus, UserCheck, Check } from 'lucide-react';
+import { ChevronDown, Search, Plus, UserCheck, Check, Lock, AlertCircle } from 'lucide-react';
 import { Participant } from '../types/quiz';
-import { fetchParticipantsList, addParticipantName } from '../lib/supabase';
+import { fetchParticipantsList, addParticipantName, fetchSessionParticipants } from '../lib/supabase';
 import { soundFx } from '../lib/audio';
 
 interface DropdownParticipantProps {
@@ -20,21 +20,41 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [activeNames, setActiveNames] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<boolean>(true);
+  const [lockWarningMsg, setLockWarningMsg] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Load participants list specific to the roomPin or quizId
+  // Load participants list & active room participants for lockout check
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       const list = await fetchParticipantsList(quizId, roomPin);
       setParticipants(list);
-      setLoading(false);
 
-      // Auto select first participant if none selected
-      if (!selectedName && list.length > 0) {
+      if (roomPin) {
+        const roomParts = await fetchSessionParticipants(undefined, roomPin);
+        if (roomParts && roomParts.length > 0) {
+          const nameSet = new Set(roomParts.map((p) => p.participant_name.toLowerCase().trim()));
+          setActiveNames(nameSet);
+
+          // Find first unassigned participant if none selected
+          if (!selectedName) {
+            const firstAvailable = list.find((p) => !nameSet.has(p.name.toLowerCase().trim()));
+            if (firstAvailable) {
+              onSelectParticipant(firstAvailable.name, firstAvailable.avatar || '🚀');
+            } else if (list.length > 0) {
+              onSelectParticipant(list[0].name, list[0].avatar || '🚀');
+            }
+          }
+        } else if (!selectedName && list.length > 0) {
+          onSelectParticipant(list[0].name, list[0].avatar || '🚀');
+        }
+      } else if (!selectedName && list.length > 0) {
         onSelectParticipant(list[0].name, list[0].avatar || '🚀');
       }
+
+      setLoading(false);
     }
     loadData();
   }, [quizId, roomPin]);
@@ -62,7 +82,15 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
   }, [participants, selectedName]);
 
   const handleSelect = (participant: Participant) => {
+    const isAlreadyActive = activeNames.has(participant.name.toLowerCase().trim());
+    if (isAlreadyActive) {
+      soundFx.playWrong();
+      setLockWarningMsg(`Nama "${participant.name}" sedang aktif digunakan oleh HP/perangkat lain di room ini! Silakan pilih nama Anda yang belum terpakai.`);
+      return;
+    }
+
     soundFx.playClick();
+    setLockWarningMsg(null);
     onSelectParticipant(participant.name, participant.avatar || '🚀');
     setIsOpen(false);
     setSearchQuery('');
@@ -71,6 +99,7 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
   const handleAddNewParticipant = async () => {
     if (!searchQuery.trim()) return;
     soundFx.playClick();
+    setLockWarningMsg(null);
     const avatars = ['🚀', '🦊', '🦄', '🐯', '🐼', '🦁', '🐱', '🐉', '🦉'];
     const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)];
 
@@ -120,6 +149,23 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
         <ChevronDown className={`w-5 h-5 text-purple-200 transition-transform duration-200 shrink-0 ${isOpen ? 'rotate-180 text-qcpp-yellow' : ''}`} />
       </button>
 
+      {/* Custom Lock Warning Toast Notification Banner */}
+      {lockWarningMsg && (
+        <div className="mt-2.5 p-3 bg-rose-600/90 border-2 border-rose-300 text-white rounded-xl text-xs font-bold shadow-xl flex items-center justify-between animate-bounce-short">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-rose-200 shrink-0" />
+            <span>{lockWarningMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLockWarningMsg(null)}
+            className="ml-2 text-xs font-black text-rose-200 hover:text-white px-2 py-0.5 bg-black/30 rounded-lg shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Dropdown Menu Popup */}
       {isOpen && (
         <div className="absolute z-50 left-0 right-0 mt-2 bg-[#23085a] border border-white/25 rounded-2xl shadow-2xl overflow-hidden gpu-accelerated animate-in fade-in duration-100">
@@ -143,20 +189,34 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
             {filteredParticipants.length > 0 ? (
               filteredParticipants.map((p) => {
                 const isSelected = p.name === selectedName;
+                const isAlreadyActive = activeNames.has(p.name.toLowerCase().trim());
+
                 return (
                   <button
                     key={p.id}
                     type="button"
                     onClick={() => handleSelect(p)}
                     className={`w-full flex items-center justify-between px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-white/10 ${
-                      isSelected ? 'bg-purple-600/60 text-white font-bold' : 'text-purple-100'
+                      isAlreadyActive
+                        ? 'bg-black/30 text-purple-300/60 cursor-not-allowed'
+                        : isSelected
+                        ? 'bg-purple-600/60 text-white font-bold'
+                        : 'text-purple-100'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 truncate">
                       <span className="text-base">{p.avatar || '🚀'}</span>
-                      <span className="truncate">{p.name}</span>
+                      <span className={`truncate ${isAlreadyActive ? 'line-through opacity-70' : ''}`}>{p.name}</span>
                     </div>
-                    {isSelected && <Check className="w-4 h-4 text-qcpp-yellow shrink-0" />}
+
+                    {isAlreadyActive ? (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-rose-300 bg-rose-950/80 px-2 py-0.5 rounded-full border border-rose-500/40 shrink-0">
+                        <Lock className="w-3 h-3 text-rose-400" />
+                        <span>Sedang Aktif</span>
+                      </span>
+                    ) : isSelected ? (
+                      <Check className="w-4 h-4 text-qcpp-yellow shrink-0" />
+                    ) : null}
                   </button>
                 );
               })

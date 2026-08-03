@@ -54,7 +54,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'Semua jawaban diatas salah'
         ],
         correct_option_index: 0, // Jawaban A
-        time_limit: 20,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -67,7 +67,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '0 cm'
         ],
         correct_option_index: 2, // Jawaban C
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -80,7 +80,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '50%'
         ],
         correct_option_index: 2, // Jawaban C
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -93,7 +93,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'Mengambil sampel tanah langsung dibuang'
         ],
         correct_option_index: 0, // Jawaban A
-        time_limit: 25,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -106,7 +106,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'Semua benar'
         ],
         correct_option_index: 1, // Jawaban B
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -119,7 +119,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '<50%'
         ],
         correct_option_index: 0, // Jawaban A
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -132,7 +132,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '50cm'
         ],
         correct_option_index: 1, // Jawaban B
-        time_limit: 15,
+        time_limit: 30,
         points: 1000,
       },
       {
@@ -145,7 +145,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'kedalaman aplikasi (70%) & kerataan aplikasi (30%)'
         ],
         correct_option_index: 0, // Jawaban A
-        time_limit: 20,
+        time_limit: 30,
         points: 1000,
       }
     ]
@@ -464,10 +464,28 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
   return session;
 }
 
-export async function joinGameSession(pin: string, participantName: string, avatar: string = '🚀'): Promise<{ session: GameSession; participant: SessionParticipant } | null> {
+export async function joinGameSession(
+  pin: string,
+  participantName: string,
+  avatar: string = '🚀'
+): Promise<{ session: GameSession; participant: SessionParticipant; error?: string } | null> {
   const session = await verifyGameSessionPin(pin);
   if (!session) {
     return null;
+  }
+
+  // Check if participant name is ALREADY ACTIVE in this room session
+  const currentParticipants = await fetchSessionParticipants(session.id);
+  const isAlreadyActive = currentParticipants.some(
+    (p) => p.participant_name.toLowerCase().trim() === participantName.toLowerCase().trim()
+  );
+
+  if (isAlreadyActive) {
+    return {
+      session,
+      participant: null as any,
+      error: `Nama "${participantName}" sedang aktif digunakan oleh perangkat lain di room ini! Silakan pilih nama Anda yang belum terpakai.`,
+    };
   }
 
   const newPart: SessionParticipant = {
@@ -518,6 +536,33 @@ export async function joinGameSession(pin: string, participantName: string, avat
     session,
     participant: newPart,
   };
+}
+
+export async function leaveGameSession(sessionId: string, participantName: string): Promise<void> {
+  if (!sessionId || !participantName) return;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from('session_participants')
+        .delete()
+        .eq('session_id', sessionId)
+        .eq('participant_name', participantName);
+    } catch (err) {
+      console.warn('Supabase leave session error:', err);
+    }
+  }
+
+  if (mockSessionParticipantsStore[sessionId]) {
+    mockSessionParticipantsStore[sessionId] = mockSessionParticipantsStore[sessionId].filter(
+      (p) => p.participant_name !== participantName
+    );
+  }
+
+  notifyMockListeners(`session-${sessionId}`, {
+    type: 'PLAYER_JOINED',
+    participants: mockSessionParticipantsStore[sessionId] || [],
+  });
 }
 
 export async function fetchSessionParticipants(sessionId?: string, pin?: string): Promise<SessionParticipant[]> {

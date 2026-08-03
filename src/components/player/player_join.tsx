@@ -79,6 +79,12 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
+    if (result.error) {
+      soundFx.playWrong();
+      setErrorMsg(result.error);
+      return;
+    }
+
     onJoined(pin.trim(), participantName, selectedAvatar, result.session.id);
   };
 
