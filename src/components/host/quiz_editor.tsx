@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Save, BookOpen, Users, Clock, AlertTriangle, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Plus, Trash2, Save, BookOpen, Users, Clock, AlertTriangle, X, Edit3, RotateCcw } from 'lucide-react';
 import { Quiz, Question } from '../../types/quiz';
-import { createQuiz, INITIAL_PARTICIPANT_NAMES } from '../../lib/supabase';
+import { createQuiz, updateQuiz, INITIAL_PARTICIPANT_NAMES } from '../../lib/supabase';
 import { soundFx } from '../../lib/audio';
 
 interface QuizEditorProps {
   onQuizCreated: (quiz: Quiz) => void;
+  onQuizUpdated?: (quiz: Quiz) => void;
   onSelectExistingQuiz: (quizId: string) => void;
   onDeleteQuiz?: (quizId: string) => void;
   existingQuizzes: Quiz[];
@@ -13,10 +14,12 @@ interface QuizEditorProps {
 
 export const QuizEditor: React.FC<QuizEditorProps> = ({
   onQuizCreated,
+  onQuizUpdated,
   onSelectExistingQuiz,
   onDeleteQuiz,
   existingQuizzes,
 }) => {
+  const [editingQuizId, setEditingQuizId] = useState<string | null>(null);
   const [title, setTitle] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [participantInput, setParticipantInput] = useState<string>(INITIAL_PARTICIPANT_NAMES.join(', '));
@@ -33,6 +36,56 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [quizToDelete, setQuizToDelete] = useState<Quiz | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  const handleStartEditQuiz = (q: Quiz) => {
+    soundFx.playClick();
+    setEditingQuizId(q.id);
+    setTitle(q.title);
+    setDescription(q.description || '');
+    setParticipantInput((q.allowed_participants || []).join(', '));
+    setQuestions(
+      q.questions && q.questions.length > 0
+        ? q.questions.map((ques) => ({
+            question_text: ques.question_text,
+            options: [...ques.options],
+            correct_option_index: ques.correct_option_index,
+            time_limit: ques.time_limit || 30,
+            points: ques.points || 1000,
+          }))
+        : [
+            {
+              question_text: '',
+              options: ['', '', '', ''],
+              correct_option_index: 0,
+              time_limit: 30,
+              points: 1000,
+            },
+          ]
+    );
+    setErrorMessage(null);
+    setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  };
+
+  const handleCancelEdit = () => {
+    soundFx.playClick();
+    setEditingQuizId(null);
+    setTitle('');
+    setDescription('');
+    setQuestions([
+      {
+        question_text: '',
+        options: ['', '', '', ''],
+        correct_option_index: 0,
+        time_limit: 30,
+        points: 1000,
+      },
+    ]);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+  };
 
   const handleAddQuestion = () => {
     soundFx.playClick();
@@ -77,6 +130,9 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
     soundFx.playClick();
     onDeleteQuiz(quizToDelete.id);
     setSuccessMessage(`Kuis "${quizToDelete.title}" berhasil dihapus.`);
+    if (editingQuizId === quizToDelete.id) {
+      handleCancelEdit();
+    }
     setQuizToDelete(null);
   };
 
@@ -101,87 +157,85 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
     setSaving(true);
     soundFx.playClick();
 
-    // Process participant names from comma-separated input
     const allowedParticipants = participantInput
       .split(',')
       .map((name) => name.trim())
       .filter((name) => name.length > 0);
 
-    const code = `QZ-${Math.floor(1000 + Math.random() * 9000)}`;
     const fullQuestions: Question[] = questions.map((q, index) => ({
       ...q,
       id: `q-custom-${Date.now()}-${index}`,
     }));
 
-    const saved = await createQuiz({
-      title: title.trim(),
-      description: description.trim(),
-      code,
-      allowed_participants: allowedParticipants,
-      questions: fullQuestions,
-    });
+    if (editingQuizId) {
+      // UPDATE EXISTING QUIZ
+      const updated = await updateQuiz(editingQuizId, {
+        title: title.trim(),
+        description: description.trim(),
+        allowed_participants: allowedParticipants,
+        questions: fullQuestions,
+      });
 
-    setSaving(false);
-    setSuccessMessage(`Kuis "${saved.title}" berhasil disimpan! Kuis baru Anda telah ditambahkan ke daftar kuis terdaftar.`);
-    
-    // Clear form
-    setTitle('');
-    setDescription('');
+      setSaving(false);
+      if (updated) {
+        setSuccessMessage(`Kuis "${updated.title}" berhasil diperbarui! Perubahan telah disimpan.`);
+        if (onQuizUpdated) onQuizUpdated(updated);
+        handleCancelEdit();
+      }
+    } else {
+      // CREATE NEW QUIZ
+      const code = `QZ-${Math.floor(1000 + Math.random() * 9000)}`;
+      const saved = await createQuiz({
+        title: title.trim(),
+        description: description.trim(),
+        code,
+        allowed_participants: allowedParticipants,
+        questions: fullQuestions,
+      });
 
-    // Update list without starting room immediately
-    onQuizCreated(saved);
+      setSaving(false);
+      setSuccessMessage(`Kuis "${saved.title}" berhasil dibuat! Kuis baru Anda telah ditambahkan ke daftar kuis terdaftar.`);
+      setTitle('');
+      setDescription('');
+      onQuizCreated(saved);
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-6 space-y-4 sm:space-y-8">
-      {/* Error Validation Notification Banner */}
-      {errorMessage && (
-        <div className="bg-rose-600/90 border-2 border-rose-300 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between text-xs sm:text-sm font-bold animate-bounce-short">
-          <div className="flex items-center space-x-2">
-            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 text-rose-200 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-          <button
-            onClick={() => setErrorMessage(null)}
-            className="ml-3 px-2 py-1 bg-black/30 hover:bg-black/50 text-white rounded-lg border border-white/20 text-xs font-bold shrink-0"
-          >
-            Tutup ✕
-          </button>
-        </div>
-      )}
-
-      {/* Success Notification Banner */}
-      {successMessage && (
-        <div className="bg-emerald-600/90 border-2 border-emerald-300 text-white rounded-2xl p-4 shadow-xl flex items-center justify-between text-xs sm:text-sm font-bold animate-bounce-short">
-          <span>{successMessage}</span>
-          <button
-            onClick={() => setSuccessMessage(null)}
-            className="ml-3 px-2 py-1 bg-black/30 hover:bg-black/50 text-white rounded-lg border border-white/20 text-xs font-bold shrink-0"
-          >
-            Tutup ✕
-          </button>
-        </div>
-      )}
-
       {/* Existing Preset Quizzes Card */}
       <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
-        <div className="flex items-center space-x-2 mb-3 sm:mb-4">
-          <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow shrink-0" />
-          <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white">
-            Pilih Quiz Terdaftar & Mulai Kuis
-          </h2>
+        <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+          <div className="flex items-center space-x-2">
+            <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow shrink-0" />
+            <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white">
+              Kelola & Mulai Quiz ({existingQuizzes.length})
+            </h2>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {existingQuizzes.map((q) => (
             <div
               key={q.id}
-              className="p-3.5 sm:p-5 rounded-xl sm:rounded-2xl bg-white/5 hover:bg-white/15 border border-white/10 transition-all flex flex-col justify-between"
+              className={`p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border transition-all flex flex-col justify-between ${
+                editingQuizId === q.id
+                  ? 'bg-purple-900/40 border-qcpp-yellow ring-2 ring-qcpp-yellow/50 shadow-2xl'
+                  : 'bg-white/5 hover:bg-white/15 border-white/10'
+              }`}
             >
               <div>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-qcpp-purple text-purple-200">
-                  {q.code} • {(q.questions || []).length} Soal
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-qcpp-purple text-purple-200">
+                    {q.code} • {(q.questions || []).length} Soal
+                  </span>
+                  {editingQuizId === q.id && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-qcpp-yellow text-black animate-pulse font-mono">
+                      Sedang Di-Edit ✏️
+                    </span>
+                  )}
+                </div>
+
                 <h3 className="text-sm sm:text-lg font-bold text-white mt-1.5 leading-snug">{q.title}</h3>
                 <p className="text-[11px] sm:text-xs text-purple-200 mt-1 line-clamp-2">{q.description}</p>
 
@@ -207,8 +261,8 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                 )}
               </div>
 
-              {/* Action Buttons: Start Quiz & Delete Quiz */}
-              <div className="mt-4 flex items-center space-x-2">
+              {/* Action Buttons: Mulai, Edit, Hapus */}
+              <div className="mt-4 flex items-center space-x-1.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -217,7 +271,17 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                   }}
                   className="flex-1 py-2 sm:py-2.5 bg-qcpp-yellow hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center space-x-1"
                 >
-                  <span>Mulai Kuis Ini 🚀</span>
+                  <span>Mulai</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleStartEditQuiz(q)}
+                  className="py-2 sm:py-2.5 px-3 bg-purple-600/40 hover:bg-purple-600 text-purple-200 hover:text-white border border-purple-400/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1 active:scale-95 shrink-0"
+                  title="Edit Kuis ini"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit</span>
                 </button>
 
                 {onDeleteQuiz && (
@@ -228,7 +292,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                       setQuizToDelete(q);
                     }}
                     className="py-2 sm:py-2.5 px-3 bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-400/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1 active:scale-95 shrink-0"
-                    title="Hapus Kuis ini dari database"
+                    title="Hapus Kuis ini"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Hapus</span>
@@ -240,12 +304,25 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
         </div>
       </div>
 
-      {/* Quiz Creator Form Card */}
-      <div className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
-        <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white mb-4 flex items-center space-x-2">
-          <Plus className="w-5 h-5 text-qcpp-yellow" />
-          <span>Buat Quiz Baru</span>
-        </h2>
+      {/* Quiz Creator / Editor Form Card */}
+      <div ref={formRef} className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+          <h2 className="text-base sm:text-xl font-bold font-['Fredoka',sans-serif] text-white flex items-center space-x-2">
+            {editingQuizId ? <Edit3 className="w-5 h-5 text-qcpp-yellow" /> : <Plus className="w-5 h-5 text-qcpp-yellow" />}
+            <span>{editingQuizId ? `Edit Kuis: "${title}"` : 'Buat Quiz'}</span>
+          </h2>
+
+          {editingQuizId && (
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white rounded-xl border border-white/20 text-xs font-bold transition-all flex items-center space-x-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Batal Edit</span>
+            </button>
+          )}
+        </div>
 
         <form onSubmit={handleSaveQuiz} className="space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -296,17 +373,11 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
 
           {/* Question Cards List */}
           <div className="space-y-4 sm:space-y-6 pt-3 border-t border-white/10">
-            <h3 className="text-base sm:text-lg font-bold text-white flex items-center justify-between">
-              <span>Daftar Soal Pertanyaan ({questions.length})</span>
-              <button
-                type="button"
-                onClick={handleAddQuestion}
-                className="px-2.5 py-1.5 bg-qcpp-green hover:bg-qcpp-greenHover text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-md active:scale-95"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Tambah Soal</span>
-              </button>
-            </h3>
+            <div className="flex items-center justify-start">
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                Daftar Soal Pertanyaan ({questions.length})
+              </h3>
+            </div>
 
             {questions.map((q, qIdx) => (
               <div key={qIdx} className="p-3.5 sm:p-5 bg-black/20 rounded-xl sm:rounded-2xl border border-white/10 space-y-3">
@@ -327,7 +398,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                       >
                         <option value={10} className="bg-[#240a5e] text-white">10 Detik</option>
                         <option value={20} className="bg-[#240a5e] text-white">20 Detik</option>
-                        <option value={30} className="bg-[#240a5e] text-white">30 Detik (Standar)</option>
+                        <option value={30} className="bg-[#240a5e] text-white">30 Detik (Default)</option>
                         <option value={45} className="bg-[#240a5e] text-white">45 Detik</option>
                         <option value={60} className="bg-[#240a5e] text-white">60 Detik</option>
                         <option value={90} className="bg-[#240a5e] text-white">90 Detik</option>
@@ -382,6 +453,18 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                 </div>
               </div>
             ))}
+
+            {/* Prominent Add Question Button placed below the last question */}
+            <div className="pt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={handleAddQuestion}
+                className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-extrabold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-emerald-900/40 border border-emerald-300/40 active:scale-95 transition-all"
+              >
+                <Plus className="w-4 h-4 text-yellow-300" />
+                <span>Tambah Soal</span>
+              </button>
+            </div>
           </div>
 
           <button
@@ -389,8 +472,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
             disabled={saving}
             className="w-full py-3.5 sm:py-4 bg-gradient-to-r from-qcpp-purple to-purple-800 hover:from-purple-700 hover:to-qcpp-purple border-2 border-purple-400/50 text-white font-extrabold text-sm sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-purple-900/40 active:scale-95 transition-all flex items-center justify-center space-x-2"
           >
-            <Save className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow" />
-            <span>{saving ? 'Menyimpan Kuis...' : 'Simpan Kuis'}</span>
+            <span>{saving ? 'Menyimpan Kuis...' : editingQuizId ? 'Simpan Perubahan' : 'Simpan'}</span>
           </button>
         </form>
       </div>

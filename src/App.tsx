@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, BookOpen, Trophy } from "lucide-react";
 import { Navbar } from "./components/navbar";
 import { PlayerJoin } from "./components/player/player_join";
 import { PlayerWaiting } from "./components/player/player_waiting";
@@ -42,9 +42,7 @@ const STORAGE_KEYS = {
 
 export const App: React.FC = () => {
   // Navigation & Host Authentication State (Persists across refresh)
-  const [activeMode, setActiveMode] = useState<"player" | "host" | "editor">(
-    "player"
-  );
+  const [activeMode, setActiveMode] = useState<"player" | "host">("player");
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
   const [isHostAuthenticated, setIsHostAuthenticated] = useState<boolean>(
     () => {
@@ -55,9 +53,7 @@ export const App: React.FC = () => {
     }
   );
   const [showHostAuthModal, setShowHostAuthModal] = useState<boolean>(false);
-  const [pendingMode, setPendingMode] = useState<"host" | "editor" | null>(
-    null
-  );
+  const [pendingMode, setPendingMode] = useState<"host" | null>(null);
 
   // Quizzes Data
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -181,13 +177,13 @@ export const App: React.FC = () => {
   };
 
   // Safe Mode Switcher with Host Auth Guard
-  const handleSelectMode = (mode: "player" | "host" | "editor") => {
+  const handleSelectMode = (mode: "player" | "host") => {
     if (mode === "player") {
       setActiveMode("player");
       return;
     }
 
-    // Require Host Authentication for 'host' or 'editor' mode
+    // Require Host Authentication for 'host' mode
     if (!isHostAuthenticated) {
       setPendingMode(mode);
       setShowHostAuthModal(true);
@@ -696,20 +692,21 @@ export const App: React.FC = () => {
             {!hostSession ? (
               <div className="space-y-6">
                 {/* Host Navigation Tabs: Editor vs Results History */}
-                <div className="max-w-4xl mx-auto flex items-center justify-center p-1.5 bg-[#240a5e] border border-white/20 rounded-2xl shadow-xl">
+                <div className="max-w-2xl mx-auto flex items-center justify-center p-1 bg-[#130330] rounded-xl shadow-md border-none gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       soundFx.playClick();
                       setHostTab("editor");
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center space-x-2 ${
+                    className={`flex-1 py-2 px-3.5 rounded-lg text-xs sm:text-sm font-bold transition-all duration-150 flex items-center justify-center space-x-1.5 border-none ${
                       hostTab === "editor"
-                        ? "bg-qcpp-yellow text-black shadow-lg scale-[1.02] font-black"
-                        : "text-purple-200 hover:text-white hover:bg-white/10"
+                        ? "bg-[#ffa602] text-slate-950 font-black shadow-sm"
+                        : "text-purple-200/70 hover:text-white hover:bg-white/10"
                     }`}
                   >
-                    <span>📝 Kelola & Buat Kuis</span>
+                    <BookOpen className={`w-4 h-4 ${hostTab === "editor" ? "text-slate-950" : "text-amber-300"}`} />
+                    <span>Kelola & Buat Kuis</span>
                   </button>
 
                   <button
@@ -718,19 +715,25 @@ export const App: React.FC = () => {
                       soundFx.playClick();
                       setHostTab("results");
                     }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center space-x-2 ${
+                    className={`flex-1 py-2 px-3.5 rounded-lg text-xs sm:text-sm font-bold transition-all duration-150 flex items-center justify-center space-x-1.5 border-none ${
                       hostTab === "results"
-                        ? "bg-qcpp-yellow text-black shadow-lg scale-[1.02] font-black"
-                        : "text-purple-200 hover:text-white hover:bg-white/10"
+                        ? "bg-[#26890c] text-white font-extrabold shadow-sm"
+                        : "text-purple-200/70 hover:text-white hover:bg-white/10"
                     }`}
                   >
-                    <span>📊 Daftar Hasil & Rekap Quiz</span>
+                    <Trophy className={`w-4 h-4 ${hostTab === "results" ? "text-white" : "text-emerald-300"}`} />
+                    <span>Daftar Hasil & Rekap Quiz</span>
                   </button>
                 </div>
 
                 {hostTab === "editor" ? (
                   <QuizEditor
-                    onQuizCreated={(quiz) => handleSelectQuizToHost(quiz.id)}
+                    onQuizCreated={(quiz) => {
+                      setQuizzes((prev) => [quiz, ...prev]);
+                    }}
+                    onQuizUpdated={(updated) => {
+                      setQuizzes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+                    }}
                     onSelectExistingQuiz={handleSelectQuizToHost}
                     onDeleteQuiz={handleDeleteQuiz}
                     existingQuizzes={quizzes}
@@ -780,17 +783,7 @@ export const App: React.FC = () => {
           </>
         )}
 
-        {/* VIEW MODE 3: QUIZ EDITOR (PROTECTED) */}
-        {activeMode === "editor" && isHostAuthenticated && (
-          <QuizEditor
-            onQuizCreated={(quiz) => {
-              setQuizzes((prev) => [quiz, ...prev]);
-              handleSelectQuizToHost(quiz.id);
-            }}
-            onSelectExistingQuiz={handleSelectQuizToHost}
-            existingQuizzes={quizzes}
-          />
-        )}
+
       </main>
 
       {/* 3, 2, 1 COUNTDOWN ANIMATION OVERLAY */}

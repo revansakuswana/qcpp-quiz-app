@@ -12,13 +12,30 @@ export const HostResultsHistory: React.FC = () => {
   const [modalSearch, setModalSearch] = useState<string>('');
 
   useEffect(() => {
-    async function loadData() {
-      setLoading(true);
+    let isMounted = true;
+
+    async function loadInitialData() {
       const data = await fetchCompletedSessionResults();
-      setResults(data);
-      setLoading(false);
+      if (isMounted) {
+        setResults(data);
+        setLoading(false);
+      }
     }
-    loadData();
+
+    loadInitialData();
+
+    // Auto-refresh completed sessions every 3 seconds for instant live persistence without reload
+    const interval = setInterval(async () => {
+      const freshData = await fetchCompletedSessionResults();
+      if (isMounted && freshData && freshData.length > 0) {
+        setResults(freshData);
+      }
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Filtered session results by PIN or Title or Code
@@ -102,7 +119,7 @@ export const HostResultsHistory: React.FC = () => {
           <div className="flex items-center space-x-2">
             <Trophy className="w-6 h-6 text-qcpp-yellow shrink-0" />
             <h1 className="text-xl sm:text-2xl font-black font-['Fredoka',sans-serif] text-white">
-              Daftar Hasil & Rekap Quiz Host
+              Daftar Hasil & Rekap Quiz
             </h1>
           </div>
           <p className="text-xs text-purple-200 mt-1">
@@ -285,7 +302,7 @@ export const HostResultsHistory: React.FC = () => {
                     className="w-full sm:w-auto px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl border border-emerald-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-                    <span>Export Data (Excel / CSV) 📥</span>
+                    <span>Export Data (CSV)</span>
                   </button>
                 </div>
               </div>
@@ -296,7 +313,7 @@ export const HostResultsHistory: React.FC = () => {
 
       {/* FULL LEADERBOARD DETAIL MODAL POPUP */}
       {selectedSession && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
           <div className="w-full max-w-4xl bg-[#240a5e] border-2 border-white/20 rounded-3xl p-5 sm:p-8 max-h-[90vh] flex flex-col shadow-2xl relative">
             {/* Close Button */}
             <button

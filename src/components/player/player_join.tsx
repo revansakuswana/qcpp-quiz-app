@@ -144,7 +144,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
                   : 'bg-white/10 text-slate-400 border border-white/10 cursor-not-allowed'
               }`}
             >
-              <span>{isVerifyingPin ? 'Verifikasi PIN...' : 'Masuk Room Quiz'}</span>
+              <span>{isVerifyingPin ? 'Verifikasi PIN...' : 'Masuk Room'}</span>
               <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </form>

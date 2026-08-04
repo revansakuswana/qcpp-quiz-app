@@ -507,6 +507,56 @@ export async function deleteQuiz(quizId: string): Promise<boolean> {
   return true;
 }
 
+export async function updateQuiz(quizId: string, updatedData: Partial<Quiz>): Promise<Quiz | null> {
+  const existingIdx = mockQuizzesStore.findIndex((q) => q.id === quizId);
+  const prev = existingIdx >= 0 ? mockQuizzesStore[existingIdx] : null;
+
+  const updatedQuiz: Quiz = {
+    id: quizId,
+    title: updatedData.title || prev?.title || 'Kuis QCPP',
+    description: updatedData.description !== undefined ? updatedData.description : (prev?.description || ''),
+    code: updatedData.code || prev?.code || 'QCPP',
+    allowed_participants: updatedData.allowed_participants || prev?.allowed_participants || [],
+    questions: updatedData.questions || prev?.questions || [],
+  };
+
+  if (existingIdx >= 0) {
+    mockQuizzesStore[existingIdx] = updatedQuiz;
+  } else {
+    mockQuizzesStore.unshift(updatedQuiz);
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from('quizzes')
+        .update({
+          title: updatedQuiz.title,
+          description: updatedQuiz.description,
+          allowed_participants: updatedQuiz.allowed_participants,
+        })
+        .eq('id', quizId);
+
+      if (updatedData.questions) {
+        await supabase.from('questions').delete().eq('quiz_id', quizId);
+        const qInserts = updatedQuiz.questions.map((q) => ({
+          quiz_id: quizId,
+          question_text: q.question_text,
+          options: q.options,
+          correct_option_index: q.correct_option_index,
+          time_limit: q.time_limit || 30,
+          points: q.points || 1000,
+        }));
+        await supabase.from('questions').insert(qInserts);
+      }
+    } catch (err) {
+      console.warn('Supabase update quiz error:', err);
+    }
+  }
+
+  return updatedQuiz;
+}
+
 // -------------------------------------------------------------
 // GAME SESSIONS (HOST)
 // -------------------------------------------------------------
@@ -579,7 +629,7 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
 
 export async function updateGameSessionState(
   sessionId: string,
-  status: 'WAITING' | 'QUESTION' | 'SHOW_RESULT' | 'LEADERBOARD' | 'FINISHED',
+  status: 'WAITING' | 'COUNTDOWN' | 'QUESTION' | 'SHOW_RESULT' | 'LEADERBOARD' | 'FINISHED',
   questionIndex: number = 0,
   questionStartedAt?: number
 ): Promise<boolean> {
@@ -617,6 +667,43 @@ export async function updateGameSessionState(
 }
 
 // -------------------------------------------------------------
+// HELPER TO RESOLVE REAL GAME SESSION UUID SAFELY
+// -------------------------------------------------------------
+async function resolveRealSessionUUID(input: string): Promise<string> {
+  const clean = input.trim();
+  if (!clean) return '';
+
+  // 1. Check local mock store first
+  const localSess = Object.values(mockSessionsStore).find(
+    (s) => s.id === clean || s.pin === clean
+  );
+  if (localSess) {
+    return localSess.id;
+  }
+
+  // 2. Query Supabase DB safely without throwing PostgreSQL UUID syntax errors
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const isPin = clean.length === 6 && /^\d+$/.test(clean);
+      let query = supabase.from('game_sessions').select('id, pin');
+      if (isPin) {
+        query = query.eq('pin', clean);
+      } else {
+        query = query.eq('id', clean);
+      }
+      const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (data && data.id) {
+        return data.id;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return clean;
+}
+
+// -------------------------------------------------------------
 // SESSION PARTICIPANTS (LOBBY & GAMEPLAY)
 // -------------------------------------------------------------
 export async function joinGameSession(
@@ -625,55 +712,32 @@ export async function joinGameSession(
   avatar: string = '🚀'
 ): Promise<SessionParticipant | null> {
   const cleanName = participantName.trim();
-  let targetSessionId = sessionIdOrPin;
-
-  // 1. Resolve real session ID if passed PIN or if session stored by PIN
-  let foundSession = Object.values(mockSessionsStore).find(
-    (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
-  );
-
-  if (!foundSession && isSupabaseConfigured && supabase) {
-    try {
-      const { data } = await supabase
-        .from('game_sessions')
-        .select('*')
-        .or(`id.eq.${sessionIdOrPin},pin.eq.${sessionIdOrPin}`)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (data) {
-        targetSessionId = data.id;
-      }
-    } catch {
-      // ignore
-    }
-  } else if (foundSession) {
-    targetSessionId = foundSession.id;
-  }
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
 
   const newPart: SessionParticipant = {
     id: `sp-${Date.now()}`,
-    session_id: targetSessionId,
+    session_id: realSessionId,
     participant_name: cleanName,
     avatar,
     score: 0,
     streak: 0,
   };
 
-  // Dual store to local memory for both targetSessionId AND sessionIdOrPin
-  const storeKeys = Array.from(new Set([targetSessionId, sessionIdOrPin]));
-  storeKeys.forEach((key) => {
+  // Keys to sync in local memory
+  const keysToSync = Array.from(new Set([realSessionId, sessionIdOrPin]));
+
+  keysToSync.forEach((key) => {
     if (!mockSessionParticipantsStore[key]) {
       mockSessionParticipantsStore[key] = [];
     }
-    const existingIdx = mockSessionParticipantsStore[key].findIndex(
+    const idx = mockSessionParticipantsStore[key].findIndex(
       (p) => p.participant_name.toLowerCase() === cleanName.toLowerCase()
     );
-    if (existingIdx >= 0) {
-      mockSessionParticipantsStore[key][existingIdx] = {
-        ...mockSessionParticipantsStore[key][existingIdx],
+    if (idx >= 0) {
+      mockSessionParticipantsStore[key][idx] = {
+        ...mockSessionParticipantsStore[key][idx],
         avatar,
-        session_id: targetSessionId,
+        session_id: realSessionId,
       };
     } else {
       mockSessionParticipantsStore[key].push(newPart);
@@ -685,9 +749,9 @@ export async function joinGameSession(
       const { data: existing } = await supabase
         .from('session_participants')
         .select('*')
-        .eq('session_id', targetSessionId)
+        .eq('session_id', realSessionId)
         .eq('participant_name', cleanName)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         await supabase
@@ -699,7 +763,7 @@ export async function joinGameSession(
           .from('session_participants')
           .insert([
             {
-              session_id: targetSessionId,
+              session_id: realSessionId,
               participant_name: cleanName,
               avatar,
               score: 0,
@@ -707,12 +771,13 @@ export async function joinGameSession(
             },
           ]);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Supabase join error:', err);
     }
   }
 
-  storeKeys.forEach((key) => {
+  // Notify real-time listeners for both UUID & PIN channels
+  keysToSync.forEach((key) => {
     notifyMockListeners(`session:${key}`, {
       type: 'PLAYER_JOINED',
       participant: newPart,
@@ -728,17 +793,10 @@ export async function leaveGameSession(
   participantName: string
 ): Promise<boolean> {
   const cleanName = participantName.trim();
-  let targetSessionId = sessionIdOrPin;
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
+  const keysToSync = Array.from(new Set([realSessionId, sessionIdOrPin]));
 
-  let foundSession = Object.values(mockSessionsStore).find(
-    (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
-  );
-  if (foundSession) {
-    targetSessionId = foundSession.id;
-  }
-
-  const storeKeys = Array.from(new Set([targetSessionId, sessionIdOrPin]));
-  storeKeys.forEach((key) => {
+  keysToSync.forEach((key) => {
     if (mockSessionParticipantsStore[key]) {
       mockSessionParticipantsStore[key] = mockSessionParticipantsStore[key].filter(
         (p) => p.participant_name.toLowerCase() !== cleanName.toLowerCase()
@@ -751,14 +809,14 @@ export async function leaveGameSession(
       await supabase
         .from('session_participants')
         .delete()
-        .or(`session_id.eq.${targetSessionId},session_id.eq.${sessionIdOrPin}`)
+        .eq('session_id', realSessionId)
         .eq('participant_name', cleanName);
     } catch {
       // ignore
     }
   }
 
-  storeKeys.forEach((key) => {
+  keysToSync.forEach((key) => {
     notifyMockListeners(`session:${key}`, {
       type: 'PLAYER_LEFT',
       participantName: cleanName,
@@ -770,25 +828,20 @@ export async function leaveGameSession(
 }
 
 export async function fetchSessionParticipants(sessionIdOrPin?: string, currentParticipantNameOrPin?: string): Promise<SessionParticipant[]> {
-  let participants: SessionParticipant[] = [];
-  let targetId = sessionIdOrPin;
-
-  if (sessionIdOrPin) {
-    let foundSession = Object.values(mockSessionsStore).find(
-      (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
-    );
-    if (foundSession) targetId = foundSession.id;
+  if (!sessionIdOrPin) {
+    const all = Object.values(mockSessionParticipantsStore);
+    return all.length > 0 ? all[all.length - 1] : [];
   }
+
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
+  let participants: SessionParticipant[] = [];
 
   if (isSupabaseConfigured && supabase) {
     try {
-      let query = supabase.from('session_participants').select('*');
-      if (sessionIdOrPin && targetId) {
-        query = query.or(`session_id.eq.${targetId},session_id.eq.${sessionIdOrPin}`);
-      } else if (sessionIdOrPin) {
-        query = query.eq('session_id', sessionIdOrPin);
-      }
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .from('session_participants')
+        .select('*')
+        .eq('session_id', realSessionId);
       if (!error && data) {
         participants = data as SessionParticipant[];
       }
@@ -797,26 +850,13 @@ export async function fetchSessionParticipants(sessionIdOrPin?: string, currentP
     }
   }
 
-  if (participants.length === 0 && targetId) {
-    participants = mockSessionParticipantsStore[targetId] || (sessionIdOrPin ? mockSessionParticipantsStore[sessionIdOrPin] : []) || [];
-  } else if (participants.length === 0) {
-    const allSess = Object.values(mockSessionParticipantsStore);
-    if (allSess.length > 0) {
-      participants = allSess[allSess.length - 1];
-    }
+  if (participants.length === 0) {
+    participants = mockSessionParticipantsStore[realSessionId] || mockSessionParticipantsStore[sessionIdOrPin] || [];
   }
 
-  if (targetId) mockSessionParticipantsStore[targetId] = participants;
-  if (sessionIdOrPin) mockSessionParticipantsStore[sessionIdOrPin] = participants;
-
-  if (currentParticipantNameOrPin) {
-    const isStillIn = participants.some(
-      (p) => p.participant_name.toLowerCase() === currentParticipantNameOrPin.trim().toLowerCase()
-    );
-    if (!isStillIn) {
-      return participants;
-    }
-  }
+  // Sync both keys in memory
+  mockSessionParticipantsStore[realSessionId] = participants;
+  mockSessionParticipantsStore[sessionIdOrPin] = participants;
 
   return participants;
 }
@@ -940,52 +980,83 @@ export function getPlayerAnswersForQuestion(sessionId: string, questionId: strin
   return Array.from(latestMap.values());
 }
 
-// -------------------------------------------------------------
-// COMPLETED SESSIONS HISTORY REKAP
-// -------------------------------------------------------------
+const COMPLETED_SESSIONS_CACHE_KEY = 'qcpp_completed_sessions_history';
+
 export async function fetchCompletedSessionResults(): Promise<CompletedSessionResult[]> {
+  // 1. Try loading from localStorage cache first for INSTANT UI render
+  let cachedResults: CompletedSessionResult[] = [];
+  try {
+    const raw = localStorage.getItem(COMPLETED_SESSIONS_CACHE_KEY);
+    if (raw) {
+      cachedResults = JSON.parse(raw);
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Fetch fresh data from Supabase if configured
   if (isSupabaseConfigured && supabase) {
     try {
       const { data: sessionsData, error } = await supabase
         .from('game_sessions')
-        .select('*, quiz:quizzes(*)')
+        .select('*, quiz:quizzes(*, questions(*))')
         .order('created_at', { ascending: false });
 
       if (!error && sessionsData && sessionsData.length > 0) {
-        const results: CompletedSessionResult[] = [];
-        for (const sess of sessionsData) {
-          const parts = await fetchSessionParticipants(sess.id);
-          
-          let totalQ = 0;
-          const { count } = await supabase
-            .from('questions')
-            .select('id', { count: 'exact', head: true })
-            .eq('quiz_id', sess.quiz_id);
+        const sessionIds = sessionsData.map((s) => s.id);
 
-          if (count && count > 0) {
-            totalQ = count;
-          } else {
-            const matchedQuiz = mockQuizzesStore.find((mq) => mq.id === sess.quiz_id || mq.code === sess.quiz?.code || mq.title === sess.quiz?.title);
-            totalQ = matchedQuiz?.questions?.length || (sess.quiz?.questions || []).length || 4;
+        // Fetch all participants for all sessions in ONE parallel query!
+        const { data: allPartsData } = await supabase
+          .from('session_participants')
+          .select('*')
+          .in('session_id', sessionIds);
+
+        const partsBySessionId: Record<string, SessionParticipant[]> = {};
+        (allPartsData || []).forEach((p) => {
+          if (!partsBySessionId[p.session_id]) {
+            partsBySessionId[p.session_id] = [];
           }
+          partsBySessionId[p.session_id].push(p as SessionParticipant);
+        });
 
-          results.push({
+        const freshResults: CompletedSessionResult[] = sessionsData.map((sess) => {
+          const parts = partsBySessionId[sess.id] || mockSessionParticipantsStore[sess.id] || [];
+          const matchedQuiz = mockQuizzesStore.find(
+            (mq) => mq.id === sess.quiz_id || mq.code === sess.quiz?.code || mq.title === sess.quiz?.title
+          );
+          const totalQ =
+            (sess.quiz?.questions || []).length || matchedQuiz?.questions?.length || 4;
+
+          return {
             id: sess.id,
             pin: sess.pin,
             quiz_id: sess.quiz_id,
-            quiz_title: sess.quiz?.title || 'Kuis QCPP',
-            quiz_code: sess.quiz?.code || 'QCPP',
+            quiz_title: sess.quiz?.title || matchedQuiz?.title || 'Kuis QCPP',
+            quiz_code: sess.quiz?.code || matchedQuiz?.code || 'QCPP',
             created_at: sess.created_at || new Date().toISOString(),
             total_questions: totalQ,
             total_participants: parts.length,
             participants: parts.sort((a, b) => b.score - a.score),
-          });
+          };
+        });
+
+        if (freshResults.length > 0) {
+          try {
+            localStorage.setItem(COMPLETED_SESSIONS_CACHE_KEY, JSON.stringify(freshResults));
+          } catch {
+            // ignore
+          }
+          return freshResults;
         }
-        if (results.length > 0) return results;
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('Error fetching completed sessions from Supabase:', err);
     }
+  }
+
+  // If cachedResults exists, return cachedResults immediately
+  if (cachedResults.length > 0) {
+    return cachedResults;
   }
 
   // Demo fallback results with exact questions count per quiz
