@@ -673,54 +673,12 @@ export const App: React.FC = () => {
           </>
         )}
 
-        {/* VIEW MODE 2: HOST (GAME MASTER - PROTECTED) */}
+        {/* VIEW MODE 2: HOST (GAME MASTER - LIVE SESSION & REKAP) */}
         {activeMode === "host" && isHostAuthenticated && (
           <>
             {!hostSession ? (
               <div className="space-y-6">
-                {/* Host Navigation Tabs: Editor vs Results History */}
-                <div className="max-w-4xl mx-auto flex items-center justify-center p-1.5 bg-[#240a5e] border border-white/20 rounded-2xl shadow-xl">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundFx.playClick();
-                      setHostTab("editor");
-                    }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center space-x-2 ${
-                      hostTab === "editor"
-                        ? "bg-qcpp-yellow text-black shadow-lg scale-[1.02] font-black"
-                        : "text-purple-200 hover:text-white hover:bg-white/10"
-                    }`}
-                  >
-                    <span>📝 Kelola & Buat Kuis</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundFx.playClick();
-                      setHostTab("results");
-                    }}
-                    className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center space-x-2 ${
-                      hostTab === "results"
-                        ? "bg-qcpp-yellow text-black shadow-lg scale-[1.02] font-black"
-                        : "text-purple-200 hover:text-white hover:bg-white/10"
-                    }`}
-                  >
-                    <span>📊 Daftar Hasil & Rekap Quiz</span>
-                  </button>
-                </div>
-
-                {hostTab === "editor" ? (
-                  <QuizEditor
-                    onQuizCreated={(quiz) => handleSelectQuizToHost(quiz.id)}
-                    onSelectExistingQuiz={handleSelectQuizToHost}
-                    onDeleteQuiz={handleDeleteQuiz}
-                    existingQuizzes={quizzes}
-                  />
-                ) : (
-                  <HostResultsHistory />
-                )}
+                <HostResultsHistory />
               </div>
             ) : (
               <>
@@ -763,14 +721,17 @@ export const App: React.FC = () => {
           </>
         )}
 
-        {/* VIEW MODE 3: QUIZ EDITOR (PROTECTED) */}
+        {/* VIEW MODE 3: BUAT & KELOLA KUIS (QUIZ EDITOR) */}
         {activeMode === "editor" && isHostAuthenticated && (
           <QuizEditor
             onQuizCreated={(quiz) => {
               setQuizzes((prev) => [quiz, ...prev]);
-              handleSelectQuizToHost(quiz.id);
             }}
+            onQuizUpdated={(updated) =>
+              setQuizzes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)))
+            }
             onSelectExistingQuiz={handleSelectQuizToHost}
+            onDeleteQuiz={handleDeleteQuiz}
             existingQuizzes={quizzes}
           />
         )}

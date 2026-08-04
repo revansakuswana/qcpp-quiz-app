@@ -121,8 +121,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center space-x-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[10px] sm:text-[11px] font-extrabold bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 hover:bg-rose-500/20 hover:border-rose-400/40 hover:text-rose-300 transition-colors shadow-sm"
               title="Klik untuk Keluar / Lock Akses Host"
             >
-              <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-              <span className="hidden md:inline">Host Active</span>
+              <span className="hidden md:inline">Logout</span>
               <LogOut className="w-3 h-3 ml-0.5" />
             </button>
           ) : (
