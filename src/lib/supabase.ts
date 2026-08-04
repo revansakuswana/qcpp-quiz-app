@@ -878,3 +878,78 @@ export function getPlayerAnswersForQuestion(sessionId: string, questionId: strin
   });
   return Array.from(latestMap.values());
 }
+
+export async function fetchCompletedSessionResults(): Promise<CompletedSessionResult[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: sessionsData, error } = await supabase
+        .from('game_sessions')
+        .select('*, quiz:quizzes(*)')
+        .order('created_at', { ascending: false });
+
+      if (!error && sessionsData && sessionsData.length > 0) {
+        const results: CompletedSessionResult[] = [];
+        for (const sess of sessionsData) {
+          const parts = await fetchSessionParticipants(sess.id);
+          results.push({
+            id: sess.id,
+            pin: sess.pin,
+            quiz_id: sess.quiz_id,
+            quiz_title: sess.quiz?.title || 'Kuis QCPP',
+            quiz_code: sess.quiz?.code || 'QCPP',
+            created_at: sess.created_at || new Date().toISOString(),
+            total_questions: (sess.quiz?.questions || []).length || 8,
+            total_participants: parts.length,
+            participants: parts.sort((a, b) => b.score - a.score),
+          });
+        }
+        if (results.length > 0) return results;
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Demo fallback results with full leaderboard ranking of participants
+  return [
+    {
+      id: 'sess-history-1',
+      pin: '849201',
+      quiz_id: 'quiz-agri-1',
+      quiz_title: 'Uji Profisiensi & Pengamatan Agregat Tanah 🚜',
+      quiz_code: 'QCPP-AGRI',
+      created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+      total_questions: 8,
+      total_participants: 21,
+      participants: [
+        { id: 'h1', session_id: 'sess-history-1', participant_name: 'Jaelani', avatar: '🦊', score: 7850, streak: 8 },
+        { id: 'h2', session_id: 'sess-history-1', participant_name: 'Revansa Helsa Kuswana', avatar: '🦄', score: 7420, streak: 7 },
+        { id: 'h3', session_id: 'sess-history-1', participant_name: 'Sugiyanto', avatar: '🦉', score: 6910, streak: 7 },
+        { id: 'h4', session_id: 'sess-history-1', participant_name: 'Tri Widodo', avatar: '🦁', score: 6540, streak: 6 },
+        { id: 'h5', session_id: 'sess-history-1', participant_name: 'Rafika Dewi', avatar: '🐱', score: 6210, streak: 6 },
+        { id: 'h6', session_id: 'sess-history-1', participant_name: 'M Iqbal Maulana', avatar: '🐯', score: 5890, streak: 5 },
+        { id: 'h7', session_id: 'sess-history-1', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 5430, streak: 5 },
+        { id: 'h8', session_id: 'sess-history-1', participant_name: 'Yohan Yogaswara', avatar: '🐉', score: 5120, streak: 4 },
+        { id: 'h9', session_id: 'sess-history-1', participant_name: 'Indra Yulianto', avatar: '🚀', score: 4800, streak: 4 },
+        { id: 'h10', session_id: 'sess-history-1', participant_name: 'Rizka Esty Wulandari', avatar: '🤖', score: 4350, streak: 3 },
+      ],
+    },
+    {
+      id: 'sess-history-2',
+      pin: '610492',
+      quiz_id: 'quiz-landprep-2',
+      quiz_title: 'Evaluasi Kesiapan Lahan & Finishing Ridger 🌾',
+      quiz_code: 'QCPP-LANDPREP',
+      created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+      total_questions: 5,
+      total_participants: 18,
+      participants: [
+        { id: 'h21', session_id: 'sess-history-2', participant_name: 'Rafika Dewi', avatar: '🦄', score: 4820, streak: 5 },
+        { id: 'h22', session_id: 'sess-history-2', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 4510, streak: 5 },
+        { id: 'h23', session_id: 'sess-history-2', participant_name: 'Yohan Yogaswara', avatar: '🦁', score: 4150, streak: 4 },
+        { id: 'h24', session_id: 'sess-history-2', participant_name: 'Zakiyatun Nafsiah', avatar: '🤖', score: 3980, streak: 4 },
+        { id: 'h25', session_id: 'sess-history-2', participant_name: 'Yahya Maulana', avatar: '👾', score: 3750, streak: 3 },
+      ],
+    },
+  ];
+}

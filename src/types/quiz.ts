@@ -58,4 +58,17 @@ export interface PlayerAnswer {
   is_correct: boolean;
   points_earned: number;
   time_taken: number;
+  created_at?: string;
+}
+
+export interface CompletedSessionResult {
+  id: string;
+  pin: string;
+  quiz_id: string;
+  quiz_title: string;
+  quiz_code: string;
+  created_at: string;
+  total_questions: number;
+  total_participants: number;
+  participants: SessionParticipant[];
 }
