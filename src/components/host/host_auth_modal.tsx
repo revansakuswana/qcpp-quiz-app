@@ -88,7 +88,7 @@ export const HostAuthModal: React.FC<HostAuthModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-purple-200 mb-1.5 flex items-center space-x-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-purple-200 mb-1.5 flex items-center space-x-1.5">
               <KeyRound className="w-4 h-4 text-kahoot-yellow" />
               <span>PIN / Passcode Host</span>
             </label>

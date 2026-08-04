@@ -274,8 +274,9 @@ export const App: React.FC = () => {
   // Cross-Device Auto-Sync Interval (Polls Supabase DB every 2 seconds for new players)
   useEffect(() => {
     if (!hostSession) return;
+    const currentSessionId = hostSession.id;
     async function syncParticipants() {
-      const liveList = await fetchSessionParticipants(hostSession.id);
+      const liveList = await fetchSessionParticipants(currentSessionId);
       if (liveList && liveList.length >= 0) {
         setHostParticipants(liveList);
       }

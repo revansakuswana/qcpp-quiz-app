@@ -33,7 +33,7 @@ export const PlayerWaiting: React.FC<PlayerWaitingProps> = ({
     let isMounted = true;
     async function updateRoomParticipants() {
       if (!pin) return;
-      const updated = await fetchSessionParticipants(undefined, pin);
+      const updated = await fetchSessionParticipants('', pin);
       if (isMounted && updated && updated.length > 0) {
         setLiveList(updated);
       }

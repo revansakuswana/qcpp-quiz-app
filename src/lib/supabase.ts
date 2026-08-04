@@ -327,13 +327,14 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
 // -------------------------------------------------------------
 // FETCH PARTICIPANTS FOR QUIZ / ROOM
 // -------------------------------------------------------------
-export async function fetchParticipantsForQuiz(quizId: string): Promise<Participant[]> {
+export async function fetchParticipantsForQuiz(quizId?: string, roomPin?: string): Promise<Participant[]> {
+  const key = quizId || 'quiz-agri-1';
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
         .from('participants')
         .select('*')
-        .eq('quiz_id', quizId);
+        .eq('quiz_id', key);
       if (!error && data && data.length > 0) {
         return data as Participant[];
       }
@@ -342,15 +343,15 @@ export async function fetchParticipantsForQuiz(quizId: string): Promise<Particip
     }
   }
 
-  if (mockParticipantsStore[quizId]) {
-    return mockParticipantsStore[quizId];
+  if (mockParticipantsStore[key]) {
+    return mockParticipantsStore[key];
   }
 
   return INITIAL_PARTICIPANT_NAMES.map((name, idx) => ({
-    id: `p-${quizId}-${idx}`,
+    id: `p-${key}-${idx}`,
     name,
     avatar: avatarsList[idx % avatarsList.length],
-    quiz_id: quizId,
+    quiz_id: key,
   }));
 }
 
@@ -632,10 +633,11 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
 
 export async function updateGameSessionState(
   sessionId: string,
-  status: 'WAITING' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED',
-  questionIndex: number = 0
+  status: 'WAITING' | 'QUESTION' | 'SHOW_RESULT' | 'LEADERBOARD' | 'FINISHED',
+  questionIndex: number = 0,
+  questionStartedAt?: number
 ): Promise<boolean> {
-  const now = Date.now();
+  const now = questionStartedAt || Date.now();
   const session = mockSessionsStore[sessionId];
   if (session) {
     session.status = status;
@@ -776,15 +778,16 @@ export async function leaveGameSession(
   return true;
 }
 
-export async function fetchSessionParticipants(sessionId: string, currentParticipantName?: string): Promise<SessionParticipant[]> {
+export async function fetchSessionParticipants(sessionId?: string, currentParticipantNameOrPin?: string): Promise<SessionParticipant[]> {
   let participants: SessionParticipant[] = [];
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('session_participants')
-        .select('*')
-        .eq('session_id', sessionId);
+      let query = supabase.from('session_participants').select('*');
+      if (sessionId) {
+        query = query.eq('session_id', sessionId);
+      }
+      const { data, error } = await query;
       if (!error && data) {
         participants = data as SessionParticipant[];
       }
@@ -793,15 +796,18 @@ export async function fetchSessionParticipants(sessionId: string, currentPartici
     }
   }
 
-  if (participants.length === 0) {
+  if (participants.length === 0 && sessionId) {
     participants = mockSessionParticipantsStore[sessionId] || [];
-  } else {
-    mockSessionParticipantsStore[sessionId] = participants;
+  } else if (participants.length === 0) {
+    const allSess = Object.values(mockSessionParticipantsStore);
+    if (allSess.length > 0) {
+      participants = allSess[allSess.length - 1];
+    }
   }
 
-  if (currentParticipantName) {
+  if (currentParticipantNameOrPin) {
     const isStillIn = participants.some(
-      (p) => p.participant_name.toLowerCase() === currentParticipantName.trim().toLowerCase()
+      (p) => p.participant_name.toLowerCase() === currentParticipantNameOrPin.trim().toLowerCase()
     );
     if (!isStillIn) {
       return participants;

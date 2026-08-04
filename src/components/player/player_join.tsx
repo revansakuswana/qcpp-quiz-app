@@ -79,13 +79,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
-    if (result.error) {
-      soundFx.playWrong();
-      setErrorMsg(result.error);
-      return;
-    }
-
-    onJoined(pin.trim(), participantName, selectedAvatar, result.session.id);
+    onJoined(pin.trim(), participantName, selectedAvatar, result.session_id);
   };
 
   return (
@@ -122,7 +116,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
         {step === 1 && (
           <form onSubmit={handleVerifyPin} className="space-y-4 sm:space-y-6">
             <div>
-              <label className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-purple-200 mb-2 flex items-center justify-center space-x-1.5">
+              <label className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-purple-200 mb-2 flex items-center justify-center space-x-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-qcpp-yellow" />
                 <span>GAME PIN ROOM</span>
               </label>
@@ -186,7 +180,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
 
             {/* Avatar Selector */}
             <div>
-              <label className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-purple-200 mb-2 flex items-center space-x-1.5">
+              <label className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-purple-200 mb-2 flex items-center space-x-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-qcpp-yellow" />
                 <span>Pilih Avatar Peserta</span>
               </label>

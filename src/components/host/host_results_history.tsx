@@ -39,7 +39,7 @@ export const HostResultsHistory: React.FC = () => {
     return results.reduce((acc, curr) => acc + (curr.participants?.length || curr.total_participants || 0), 0);
   }, [results]);
 
-  const topScorerOverall = useMemo(() => {
+  const topScorerOverall = useMemo<{ name: string; score: number; quiz: string; avatar: string } | null>(() => {
     let top: { name: string; score: number; quiz: string; avatar: string } | null = null;
     results.forEach((r) => {
       if (r.participants && r.participants.length > 0) {

@@ -7,6 +7,7 @@ interface HostQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
+  questionStartedAt?: number;
   answers: PlayerAnswer[];
   totalPlayers: number;
   onNextStep: () => void;

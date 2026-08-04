@@ -33,7 +33,7 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
       setParticipants(list);
 
       if (roomPin) {
-        const roomParts = await fetchSessionParticipants(undefined, roomPin);
+        const roomParts = await fetchSessionParticipants('', roomPin);
         if (roomParts && roomParts.length > 0) {
           const nameSet = new Set(roomParts.map((p) => p.participant_name.toLowerCase().trim()));
           setActiveNames(nameSet);
@@ -47,11 +47,7 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
               onSelectParticipant(list[0].name, list[0].avatar || '🚀');
             }
           }
-        } else if (!selectedName && list.length > 0) {
-          onSelectParticipant(list[0].name, list[0].avatar || '🚀');
         }
-      } else if (!selectedName && list.length > 0) {
-        onSelectParticipant(list[0].name, list[0].avatar || '🚀');
       }
 
       setLoading(false);
@@ -112,7 +108,7 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
 
   return (
     <div className="relative w-full text-left gpu-accelerated" ref={dropdownRef}>
-      <label className="block text-xs font-bold uppercase tracking-wider text-purple-200 mb-1.5 flex items-center justify-between">
+      <label className="text-xs font-bold uppercase tracking-wider text-purple-200 mb-1.5 flex items-center justify-between">
         <span className="flex items-center space-x-1.5">
           <UserCheck className="w-4 h-4 text-qcpp-yellow" />
           <span>Pilih Nama Peserta</span>
