@@ -11,6 +11,7 @@ import { HostQuestion } from "./components/host/host_question";
 import { HostLeaderboard } from "./components/host/host_leaderboard";
 import { HostAuthModal } from "./components/host/host_auth_modal";
 import { HostResultsHistory } from "./components/host/host_results_history";
+import { CountdownOverlay } from "./components/countdown_overlay";
 import {
   Quiz,
   GameSession,
@@ -306,8 +307,19 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [activeMode, hostStep, hostSession, hostCurrentQuestionIdx]);
 
+  // Countdown States (3, 2, 1)
+  const [isHostCountdown, setIsHostCountdown] = useState<boolean>(false);
+  const [isPlayerCountdown, setIsPlayerCountdown] = useState<boolean>(false);
+
   const handleHostStartQuiz = async () => {
     if (!hostSession) return;
+    setIsHostCountdown(true);
+    await updateSessionStatus(hostSession.id, "COUNTDOWN", 0, Date.now());
+  };
+
+  const finishHostCountdown = async () => {
+    if (!hostSession) return;
+    setIsHostCountdown(false);
     const now = Date.now();
     setQuestionStartedAt(now);
     setHostStep("QUESTION");
@@ -441,12 +453,16 @@ export const App: React.FC = () => {
           setPlayerRoomParticipants([...event.participants]);
         }
       } else if (event.type === "SESSION_UPDATED") {
-        if (event.status === "QUESTION") {
+        if (event.status === "COUNTDOWN") {
+          setIsPlayerCountdown(true);
+        } else if (event.status === "QUESTION") {
+          setIsPlayerCountdown(false);
           setPlayerStep("QUESTION");
           setPlayerQuestionIdx(event.questionIndex || 0);
           setHasAnsweredCurrent(false);
           setSelectedAnswerIdx(null);
         } else if (event.status === "FINISHED") {
+          setIsPlayerCountdown(false);
           setPlayerStep("FINAL");
         }
       }
@@ -737,6 +753,20 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* 3, 2, 1 COUNTDOWN ANIMATION OVERLAY */}
+      {(isHostCountdown || isPlayerCountdown) && (
+        <CountdownOverlay
+          onComplete={() => {
+            if (isHostCountdown) {
+              finishHostCountdown();
+            } else {
+              setIsPlayerCountdown(false);
+            }
+          }}
+          title={hostSession?.quiz?.title || playerQuiz?.title || "Persiapkan Diri!"}
+        />
+      )}
 
       {/* Host Authentication Modal Guard */}
       <HostAuthModal

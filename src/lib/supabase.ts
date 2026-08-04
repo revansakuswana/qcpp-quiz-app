@@ -674,42 +674,72 @@ export async function updateGameSessionState(
 // SESSION PARTICIPANTS (LOBBY & GAMEPLAY)
 // -------------------------------------------------------------
 export async function joinGameSession(
-  sessionId: string,
+  sessionIdOrPin: string,
   participantName: string,
   avatar: string = '🚀'
 ): Promise<SessionParticipant | null> {
   const cleanName = participantName.trim();
+  let targetSessionId = sessionIdOrPin;
+
+  // 1. Resolve real session ID if passed PIN or if session stored by PIN
+  let foundSession = Object.values(mockSessionsStore).find(
+    (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
+  );
+
+  if (!foundSession && isSupabaseConfigured && supabase) {
+    try {
+      const { data } = await supabase
+        .from('game_sessions')
+        .select('*')
+        .or(`id.eq.${sessionIdOrPin},pin.eq.${sessionIdOrPin}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (data) {
+        targetSessionId = data.id;
+      }
+    } catch {
+      // ignore
+    }
+  } else if (foundSession) {
+    targetSessionId = foundSession.id;
+  }
+
   const newPart: SessionParticipant = {
     id: `sp-${Date.now()}`,
-    session_id: sessionId,
+    session_id: targetSessionId,
     participant_name: cleanName,
     avatar,
     score: 0,
     streak: 0,
   };
 
-  if (!mockSessionParticipantsStore[sessionId]) {
-    mockSessionParticipantsStore[sessionId] = [];
-  }
-
-  const existingIdx = mockSessionParticipantsStore[sessionId].findIndex(
-    (p) => p.participant_name.toLowerCase() === cleanName.toLowerCase()
-  );
-  if (existingIdx >= 0) {
-    mockSessionParticipantsStore[sessionId][existingIdx] = {
-      ...mockSessionParticipantsStore[sessionId][existingIdx],
-      avatar,
-    };
-  } else {
-    mockSessionParticipantsStore[sessionId].push(newPart);
-  }
+  // Dual store to local memory for both targetSessionId AND sessionIdOrPin
+  const storeKeys = Array.from(new Set([targetSessionId, sessionIdOrPin]));
+  storeKeys.forEach((key) => {
+    if (!mockSessionParticipantsStore[key]) {
+      mockSessionParticipantsStore[key] = [];
+    }
+    const existingIdx = mockSessionParticipantsStore[key].findIndex(
+      (p) => p.participant_name.toLowerCase() === cleanName.toLowerCase()
+    );
+    if (existingIdx >= 0) {
+      mockSessionParticipantsStore[key][existingIdx] = {
+        ...mockSessionParticipantsStore[key][existingIdx],
+        avatar,
+        session_id: targetSessionId,
+      };
+    } else {
+      mockSessionParticipantsStore[key].push(newPart);
+    }
+  });
 
   if (isSupabaseConfigured && supabase) {
     try {
       const { data: existing } = await supabase
         .from('session_participants')
         .select('*')
-        .eq('session_id', sessionId)
+        .eq('session_id', targetSessionId)
         .eq('participant_name', cleanName)
         .single();
 
@@ -723,7 +753,7 @@ export async function joinGameSession(
           .from('session_participants')
           .insert([
             {
-              session_id: sessionId,
+              session_id: targetSessionId,
               participant_name: cleanName,
               avatar,
               score: 0,
@@ -736,56 +766,81 @@ export async function joinGameSession(
     }
   }
 
-  notifyMockListeners(`session:${sessionId}`, {
-    type: 'PLAYER_JOINED',
-    participant: newPart,
-    participants: mockSessionParticipantsStore[sessionId],
+  storeKeys.forEach((key) => {
+    notifyMockListeners(`session:${key}`, {
+      type: 'PLAYER_JOINED',
+      participant: newPart,
+      participants: mockSessionParticipantsStore[key],
+    });
   });
 
   return newPart;
 }
 
 export async function leaveGameSession(
-  sessionId: string,
+  sessionIdOrPin: string,
   participantName: string
 ): Promise<boolean> {
   const cleanName = participantName.trim();
+  let targetSessionId = sessionIdOrPin;
 
-  if (mockSessionParticipantsStore[sessionId]) {
-    mockSessionParticipantsStore[sessionId] = mockSessionParticipantsStore[sessionId].filter(
-      (p) => p.participant_name.toLowerCase() !== cleanName.toLowerCase()
-    );
+  let foundSession = Object.values(mockSessionsStore).find(
+    (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
+  );
+  if (foundSession) {
+    targetSessionId = foundSession.id;
   }
+
+  const storeKeys = Array.from(new Set([targetSessionId, sessionIdOrPin]));
+  storeKeys.forEach((key) => {
+    if (mockSessionParticipantsStore[key]) {
+      mockSessionParticipantsStore[key] = mockSessionParticipantsStore[key].filter(
+        (p) => p.participant_name.toLowerCase() !== cleanName.toLowerCase()
+      );
+    }
+  });
 
   if (isSupabaseConfigured && supabase) {
     try {
       await supabase
         .from('session_participants')
         .delete()
-        .eq('session_id', sessionId)
+        .or(`session_id.eq.${targetSessionId},session_id.eq.${sessionIdOrPin}`)
         .eq('participant_name', cleanName);
     } catch {
       // ignore
     }
   }
 
-  notifyMockListeners(`session:${sessionId}`, {
-    type: 'PLAYER_LEFT',
-    participantName: cleanName,
-    participants: mockSessionParticipantsStore[sessionId] || [],
+  storeKeys.forEach((key) => {
+    notifyMockListeners(`session:${key}`, {
+      type: 'PLAYER_LEFT',
+      participantName: cleanName,
+      participants: mockSessionParticipantsStore[key] || [],
+    });
   });
 
   return true;
 }
 
-export async function fetchSessionParticipants(sessionId?: string, currentParticipantNameOrPin?: string): Promise<SessionParticipant[]> {
+export async function fetchSessionParticipants(sessionIdOrPin?: string, currentParticipantNameOrPin?: string): Promise<SessionParticipant[]> {
   let participants: SessionParticipant[] = [];
+  let targetId = sessionIdOrPin;
+
+  if (sessionIdOrPin) {
+    let foundSession = Object.values(mockSessionsStore).find(
+      (s) => s.id === sessionIdOrPin || s.pin === sessionIdOrPin
+    );
+    if (foundSession) targetId = foundSession.id;
+  }
 
   if (isSupabaseConfigured && supabase) {
     try {
       let query = supabase.from('session_participants').select('*');
-      if (sessionId) {
-        query = query.eq('session_id', sessionId);
+      if (sessionIdOrPin && targetId) {
+        query = query.or(`session_id.eq.${targetId},session_id.eq.${sessionIdOrPin}`);
+      } else if (sessionIdOrPin) {
+        query = query.eq('session_id', sessionIdOrPin);
       }
       const { data, error } = await query;
       if (!error && data) {
@@ -796,14 +851,17 @@ export async function fetchSessionParticipants(sessionId?: string, currentPartic
     }
   }
 
-  if (participants.length === 0 && sessionId) {
-    participants = mockSessionParticipantsStore[sessionId] || [];
+  if (participants.length === 0 && targetId) {
+    participants = mockSessionParticipantsStore[targetId] || (sessionIdOrPin ? mockSessionParticipantsStore[sessionIdOrPin] : []) || [];
   } else if (participants.length === 0) {
     const allSess = Object.values(mockSessionParticipantsStore);
     if (allSess.length > 0) {
       participants = allSess[allSess.length - 1];
     }
   }
+
+  if (targetId) mockSessionParticipantsStore[targetId] = participants;
+  if (sessionIdOrPin) mockSessionParticipantsStore[sessionIdOrPin] = participants;
 
   if (currentParticipantNameOrPin) {
     const isStillIn = participants.some(

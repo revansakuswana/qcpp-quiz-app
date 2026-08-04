@@ -14,6 +14,7 @@ const AVATARS = ['🦊', '🦄', '🐯', '🐼', '🦁', '🐱', '🐉', '🦉',
 export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost }) => {
   const [step, setStep] = useState<1 | 2>(1); // Step 1: Enter PIN, Step 2: Select Name & Avatar
   const [pin, setPin] = useState<string>('');
+  const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [participantName, setParticipantName] = useState<string>('');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('🦊');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -50,7 +51,8 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
-    // PIN is valid, proceed to Step 2
+    // Save actual session ID & proceed to Step 2
+    setActiveSessionId(validSession.id);
     soundFx.playCorrect();
     setStep(2);
   };
@@ -69,7 +71,8 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
     setIsSubmitting(true);
     soundFx.playClick();
 
-    const result = await joinGameSession(pin.trim(), participantName, selectedAvatar);
+    const targetId = activeSessionId || pin.trim();
+    const result = await joinGameSession(targetId, participantName, selectedAvatar);
     setIsSubmitting(false);
 
     if (!result) {
@@ -79,7 +82,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
-    onJoined(pin.trim(), participantName, selectedAvatar, result.session_id);
+    onJoined(pin.trim(), participantName, selectedAvatar, result.session_id || targetId);
   };
 
   return (

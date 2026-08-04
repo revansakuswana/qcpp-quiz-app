@@ -45,7 +45,54 @@ class SoundManager {
     }
   }
 
-  // Play countdown beep
+  // Play 3, 2, 1 countdown sound effect
+  public playCountdownBeep(num: number) {
+    if (this.muted) return;
+    this.init();
+    if (!this.ctx) return;
+
+    try {
+      const now = this.ctx.currentTime;
+      if (num === 0) {
+        // "GO!" - Triumphant multi-tone chord blast
+        const chordFreqs = [523.25, 659.25, 783.99, 1046.50];
+        chordFreqs.forEach((freq) => {
+          const osc = this.ctx!.createOscillator();
+          const gain = this.ctx!.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now);
+          gain.gain.setValueAtTime(0.25, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+          osc.connect(gain);
+          gain.connect(this.ctx!.destination);
+          osc.start(now);
+          osc.stop(now + 0.4);
+        });
+      } else {
+        // 3, 2, 1 - Rising punchy synth beep
+        const freqMap: Record<number, number> = { 3: 587.33, 2: 698.46, 1: 880.00 };
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freqMap[num] || 700, now);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 0.18);
+      }
+    } catch {
+      // Ignore audio error
+    }
+  }
+
+  // Play countdown tick
   public playTick() {
     if (this.muted) return;
     this.init();
