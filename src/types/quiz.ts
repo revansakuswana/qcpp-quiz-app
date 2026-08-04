@@ -45,6 +45,7 @@ export interface SessionParticipant {
   avatar: string;
   score: number;
   streak: number;
+  correct_answers_count?: number;
   last_points_gained?: number;
   last_is_correct?: boolean;
 }

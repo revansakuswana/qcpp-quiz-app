@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Save, BookOpen, Users, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Save, BookOpen, Users, Clock, AlertTriangle, X } from 'lucide-react';
 import { Quiz, Question } from '../../types/quiz';
 import { createQuiz, INITIAL_PARTICIPANT_NAMES } from '../../lib/supabase';
 import { soundFx } from '../../lib/audio';
@@ -7,12 +7,14 @@ import { soundFx } from '../../lib/audio';
 interface QuizEditorProps {
   onQuizCreated: (quiz: Quiz) => void;
   onSelectExistingQuiz: (quizId: string) => void;
+  onDeleteQuiz?: (quizId: string) => void;
   existingQuizzes: Quiz[];
 }
 
 export const QuizEditor: React.FC<QuizEditorProps> = ({
   onQuizCreated,
   onSelectExistingQuiz,
+  onDeleteQuiz,
   existingQuizzes,
 }) => {
   const [title, setTitle] = useState<string>('');
@@ -30,6 +32,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
   const [saving, setSaving] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [quizToDelete, setQuizToDelete] = useState<Quiz | null>(null);
 
   const handleAddQuestion = () => {
     soundFx.playClick();
@@ -67,6 +70,14 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
       copy[qIdx].options = newOpts;
       return copy;
     });
+  };
+
+  const handleConfirmDeleteQuiz = () => {
+    if (!quizToDelete || !onDeleteQuiz) return;
+    soundFx.playClick();
+    onDeleteQuiz(quizToDelete.id);
+    setSuccessMessage(`Kuis "${quizToDelete.title}" berhasil dihapus.`);
+    setQuizToDelete(null);
   };
 
   const handleSaveQuiz = async (e: React.FormEvent) => {
@@ -196,16 +207,34 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  soundFx.playClick();
-                  onSelectExistingQuiz(q.id);
-                }}
-                className="mt-4 w-full py-2 sm:py-2.5 bg-qcpp-yellow hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center space-x-1.5"
-              >
-                <span>Mulai Kuis Ini</span>
-              </button>
+              {/* Action Buttons: Start Quiz & Delete Quiz */}
+              <div className="mt-4 flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    onSelectExistingQuiz(q.id);
+                  }}
+                  className="flex-1 py-2 sm:py-2.5 bg-qcpp-yellow hover:bg-amber-400 text-black font-extrabold text-xs sm:text-sm rounded-xl shadow-lg active:scale-95 transition-all flex items-center justify-center space-x-1"
+                >
+                  <span>Mulai Kuis Ini 🚀</span>
+                </button>
+
+                {onDeleteQuiz && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playWrong();
+                      setQuizToDelete(q);
+                    }}
+                    className="py-2 sm:py-2.5 px-3 bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-400/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-1 active:scale-95 shrink-0"
+                    title="Hapus Kuis ini dari database"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus</span>
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -365,6 +394,51 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
           </button>
         </form>
       </div>
+
+      {/* CONFIRMATION DELETE QUIZ MODAL DIALOG */}
+      {quizToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-[#240a5e] border-2 border-rose-500/40 rounded-3xl p-6 shadow-2xl text-center relative space-y-4">
+            <button
+              onClick={() => setQuizToDelete(null)}
+              className="absolute top-4 right-4 text-purple-300 hover:text-white p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center text-rose-400">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-black font-['Fredoka',sans-serif] text-white">
+                Hapus Kuis Ini?
+              </h3>
+              <p className="text-xs text-purple-200 mt-1 leading-relaxed">
+                Apakah Anda yakin ingin menghapus kuis <span className="font-bold text-rose-300">"{quizToDelete.title}"</span> ({quizToDelete.code})? Tindakan ini tidak dapat dibatalkan.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setQuizToDelete(null)}
+                className="flex-1 py-2.5 px-4 bg-white/10 hover:bg-white/20 text-white font-bold text-xs rounded-xl transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteQuiz}
+                className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-rose-900/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Ya, Hapus Kuis</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -29,6 +29,7 @@ import {
   fetchSessionParticipants,
   verifyGameSessionPin,
   leaveGameSession,
+  deleteQuiz,
 } from "./lib/supabase";
 import { soundFx } from "./lib/audio";
 
@@ -220,6 +221,11 @@ export const App: React.FC = () => {
   // ==========================================
   // HOST ACTIONS & PERSISTENCE
   // ==========================================
+
+  const handleDeleteQuiz = async (quizId: string) => {
+    await deleteQuiz(quizId);
+    setQuizzes((prev) => prev.filter((q) => q.id !== quizId));
+  };
 
   const handleSelectQuizToHost = async (quizId: string) => {
     if (!isHostAuthenticated) {
@@ -709,6 +715,7 @@ export const App: React.FC = () => {
                   <QuizEditor
                     onQuizCreated={(quiz) => handleSelectQuizToHost(quiz.id)}
                     onSelectExistingQuiz={handleSelectQuizToHost}
+                    onDeleteQuiz={handleDeleteQuiz}
                     existingQuizzes={quizzes}
                   />
                 ) : (

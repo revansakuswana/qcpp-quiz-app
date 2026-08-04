@@ -114,9 +114,14 @@ export const HostLeaderboard: React.FC<HostLeaderboardProps> = ({
                 <div className="flex items-center space-x-3">
                   <span className="font-mono font-bold text-purple-300">#{idx + 4}</span>
                   <span>{p.avatar || '🚀'}</span>
-                  <span className="text-white">{p.participant_name}</span>
+                  <span className="text-white font-bold">{p.participant_name}</span>
+                  {p.correct_answers_count !== undefined && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-mono font-bold">
+                      {p.correct_answers_count} Benar ✅
+                    </span>
+                  )}
                 </div>
-                <span className="font-mono font-bold text-kahoot-yellow">{p.score} pts</span>
+                <span className="font-mono font-bold text-kahoot-yellow">{p.score.toLocaleString()} pts</span>
               </div>
             ))}
           </div>

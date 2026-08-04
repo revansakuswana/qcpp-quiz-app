@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, Users, Search, Download, Calendar, Medal, Eye, X, CheckCircle2, Sparkles, FileSpreadsheet } from 'lucide-react';
+import { Trophy, Users, Search, Download, Calendar, Medal, Eye, X, CheckCircle2, FileSpreadsheet, Check } from 'lucide-react';
 import { CompletedSessionResult, SessionParticipant } from '../../types/quiz';
 import { fetchCompletedSessionResults } from '../../lib/supabase';
 import { soundFx } from '../../lib/audio';
@@ -60,15 +60,20 @@ export const HostResultsHistory: React.FC = () => {
   // Function to Export CSV Data
   const handleExportCSV = (session: CompletedSessionResult) => {
     soundFx.playClick();
-    const headers = ['Peringkat', 'Nama Peserta', 'Skor Akhir (PTS)', 'Streak', 'PIN Room', 'Judul Kuis'];
-    const rows = (session.participants || []).map((p, idx) => [
-      idx + 1,
-      `"${p.participant_name.replace(/"/g, '""')}"`,
-      p.score,
-      p.streak || 0,
-      session.pin,
-      `"${session.quiz_title.replace(/"/g, '""')}"`,
-    ]);
+    const headers = ['Peringkat', 'Nama Peserta', 'Jawaban Benar', 'Total Soal', 'Skor Akhir (PTS)', 'Streak', 'PIN Room', 'Judul Kuis'];
+    const rows = (session.participants || []).map((p, idx) => {
+      const correct = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), session.total_questions);
+      return [
+        idx + 1,
+        `"${p.participant_name.replace(/"/g, '""')}"`,
+        `"${correct}/${session.total_questions} Benar"`,
+        session.total_questions,
+        p.score,
+        p.streak || 0,
+        session.pin,
+        `"${session.quiz_title.replace(/"/g, '""')}"`,
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -101,7 +106,7 @@ export const HostResultsHistory: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs text-purple-200 mt-1">
-            Riwayat lengkap skor, peringkat peserta, dan analisis hasil kuis yang telah selesai diselenggarakan.
+            Riwayat lengkap skor, jumlah jawaban benar, peringkat peserta, dan analisis hasil kuis yang telah selesai diselenggarakan.
           </p>
         </div>
 
@@ -221,28 +226,35 @@ export const HostResultsHistory: React.FC = () => {
                   </p>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {top3.map((p, idx) => (
-                      <div
-                        key={p.id || idx}
-                        className={`p-3 rounded-xl border flex items-center justify-between ${
-                          idx === 0
-                            ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
-                            : idx === 1
-                            ? 'bg-slate-400/20 border-slate-300/40 text-slate-200'
-                            : 'bg-amber-700/20 border-amber-600/40 text-amber-300'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-2 truncate">
-                          <span className="text-lg">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</span>
-                          <span className="text-base">{p.avatar || '🚀'}</span>
-                          <div className="truncate">
-                            <p className="text-xs font-bold text-white truncate">{p.participant_name}</p>
-                            <p className="text-[10px] opacity-80">Rank #{idx + 1}</p>
+                    {top3.map((p, idx) => {
+                      const correctCount = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), session.total_questions);
+                      return (
+                        <div
+                          key={p.id || idx}
+                          className={`p-3 rounded-xl border flex items-center justify-between ${
+                            idx === 0
+                              ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
+                              : idx === 1
+                              ? 'bg-slate-400/20 border-slate-300/40 text-slate-200'
+                              : 'bg-amber-700/20 border-amber-600/40 text-amber-300'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            <span className="text-lg">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</span>
+                            <span className="text-base">{p.avatar || '🚀'}</span>
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-white truncate">{p.participant_name}</p>
+                              <div className="flex items-center space-x-1.5 mt-0.5">
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-400/30">
+                                  {correctCount}/{session.total_questions} Benar ✅
+                                </span>
+                              </div>
+                            </div>
                           </div>
+                          <span className="text-xs font-black font-mono ml-2 shrink-0">{p.score.toLocaleString()} pts</span>
                         </div>
-                        <span className="text-xs font-black font-mono">{p.score.toLocaleString()} pts</span>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {top3.length === 0 && (
                       <div className="col-span-3 p-3 bg-black/20 rounded-xl text-xs text-purple-300 italic text-center">
@@ -285,7 +297,7 @@ export const HostResultsHistory: React.FC = () => {
       {/* FULL LEADERBOARD DETAIL MODAL POPUP */}
       {selectedSession && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="w-full max-w-3xl bg-[#240a5e] border-2 border-white/20 rounded-3xl p-5 sm:p-8 max-h-[90vh] flex flex-col shadow-2xl relative">
+          <div className="w-full max-w-4xl bg-[#240a5e] border-2 border-white/20 rounded-3xl p-5 sm:p-8 max-h-[90vh] flex flex-col shadow-2xl relative">
             {/* Close Button */}
             <button
               onClick={() => setSelectedSession(null)}
@@ -303,7 +315,7 @@ export const HostResultsHistory: React.FC = () => {
                 {selectedSession.quiz_title}
               </h2>
               <p className="text-xs text-purple-200 mt-1">
-                Rekap peringkat akhir seluruh peserta untuk sesi ini.
+                Rekap peringkat akhir dan jumlah jawaban benar dari total {selectedSession.total_questions} soal untuk sesi ini.
               </p>
             </div>
 
@@ -326,42 +338,54 @@ export const HostResultsHistory: React.FC = () => {
                   <tr>
                     <th className="py-3 px-4">Peringkat</th>
                     <th className="py-3 px-4">Peserta</th>
+                    <th className="py-3 px-4 text-center">Jawaban Benar</th>
                     <th className="py-3 px-4 text-center">Streak</th>
                     <th className="py-3 px-4 text-right">Skor Akhir</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {modalFilteredParticipants.map((p, idx) => (
-                    <tr
-                      key={p.id || idx}
-                      className={`hover:bg-white/10 transition-colors ${
-                        idx === 0
-                          ? 'bg-amber-500/10 font-bold text-amber-200'
-                          : idx === 1
-                          ? 'bg-slate-400/10 font-bold text-slate-200'
-                          : idx === 2
-                          ? 'bg-amber-700/10 font-bold text-amber-300'
-                          : 'text-purple-100'
-                      }`}
-                    >
-                      <td className="py-3 px-4 font-mono font-bold">
-                        {idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}
-                      </td>
-                      <td className="py-3 px-4 flex items-center space-x-2">
-                        <span className="text-base">{p.avatar || '🚀'}</span>
-                        <span className="font-bold text-white">{p.participant_name}</span>
-                      </td>
-                      <td className="py-3 px-4 text-center font-mono">
-                        {p.streak && p.streak > 0 ? `🔥 ${p.streak}` : '-'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-extrabold text-qcpp-yellow text-sm">
-                        {p.score.toLocaleString()} pts
-                      </td>
-                    </tr>
-                  ))}
+                  {modalFilteredParticipants.map((p, idx) => {
+                    const correctCount = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), selectedSession.total_questions);
+                    const percentage = Math.round((correctCount / selectedSession.total_questions) * 100);
+
+                    return (
+                      <tr
+                        key={p.id || idx}
+                        className={`hover:bg-white/10 transition-colors ${
+                          idx === 0
+                            ? 'bg-amber-500/10 font-bold text-amber-200'
+                            : idx === 1
+                            ? 'bg-slate-400/10 font-bold text-slate-200'
+                            : idx === 2
+                            ? 'bg-amber-700/10 font-bold text-amber-300'
+                            : 'text-purple-100'
+                        }`}
+                      >
+                        <td className="py-3 px-4 font-mono font-bold">
+                          {idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}
+                        </td>
+                        <td className="py-3 px-4 flex items-center space-x-2">
+                          <span className="text-base">{p.avatar || '🚀'}</span>
+                          <span className="font-bold text-white">{p.participant_name}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono">
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-bold">
+                            <span>{correctCount} / {selectedSession.total_questions} Benar</span>
+                            <span className="text-[10px] opacity-80">({percentage}%)</span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono">
+                          {p.streak && p.streak > 0 ? `🔥 ${p.streak}` : '-'}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-extrabold text-qcpp-yellow text-sm">
+                          {p.score.toLocaleString()} pts
+                        </td>
+                      </tr>
+                    );
+                  })}
                   {modalFilteredParticipants.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="py-6 text-center text-xs text-purple-300">
+                      <td colSpan={5} className="py-6 text-center text-xs text-purple-300">
                         Tidak ada data peserta yang cocok.
                       </td>
                     </tr>

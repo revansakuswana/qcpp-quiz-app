@@ -1,23 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
-import { Participant, Quiz, GameSession, SessionParticipant, PlayerAnswer } from '../types/quiz';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Quiz, GameSession, Participant, SessionParticipant, PlayerAnswer, CompletedSessionResult } from '../types/quiz';
 
-// Environmental variables read from VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY
+// Environmental Keys
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnonKey &&
+  supabaseUrl.startsWith('https://') &&
+  supabaseAnonKey.length > 20
+);
 
-export const supabase = isSupabaseConfigured
+export const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Full Participant Names transcribed from image
+// Initial Participant list for QCPP Quiz
 export const INITIAL_PARTICIPANT_NAMES = [
-  'Jaelani', 'Tri Widodo', 'Agustinus Triono', 'Adi Suryanto', 'Ari Wijonarto',
-  'Rizky Kienzle O', 'Wondo Sudarto', 'Teguh Suwitono', 'Slamet A', 'Dwi Angga Winata',
-  'Kiswatak', 'Legiyanto', 'Fauzi Darwis', 'Sudibyo', 'Sopyan',
-  'Agus Susanto', 'Dicky Ari Kurniawan', 'Muhajirin', 'M. Subandi', 'Cahyono',
-  'Rosidi, SAG', 'Putra Fauzan Agung', 'Rangga Paksi Herdani Putra', 'Aldi', 'Anggi Muhlisin',
+  'Jaelani', 'Rosidi, SAG', 'Putra Fauzan Agung', 'Rangga Paksi Herdani Putra', 'Aldi', 'Anggi Muhlisin',
   'Dwi Febri Saputra', 'Harun Abidin', 'Muhamad Anis Ikhsan', 'Rikqi Setiawan', 'Wayan Kerte',
   'Dian Arifin', 'Feri Anwar', 'Feri Eko Saputra', 'Dava Hafizza', 'Arif Waluyo Bonar',
   'Andi Angga Saputra', 'Syapriansah', 'Sindu Andion', 'Muhammad Sulthan Faris', 'I Made Cerita',
@@ -28,7 +29,6 @@ export const INITIAL_PARTICIPANT_NAMES = [
   'Ivan Rivandi', 'Solikhin', 'Wahyu Darmawan', 'Ardi Abdul Majid', 'Ridho Jula Ariyanto',
   'Susilo', 'Dimas Ramadhiansyah', 'Ahmad Hafif Fauzi', 'Wiyatno', 'Achmad Inzan Masruri',
   'Ari Saputra',
-  // Peserta Baru Tambahan
   'I Nengah Aryata', 'Rafika Dewi', 'M Iqbal Maulana', 'Anggi Agung Pambudi', 'Yohan Yogaswara',
   'Indra Yulianto', 'Rizka Esty Wulandari', 'Sugiyanto', 'Andri Tri Wicaksono', 'Zakiyatun Nafsiah',
   'Yahya Maulana', 'Sylfaa Aalimatul H', 'Revansa Helsa Kuswana', 'Reza Adi Saputra', 'Pandu Wiratama',
@@ -53,7 +53,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '% Bonggol Tercacah (BC) = (10 – jumlah bonggol yang utuh) / 5 x 100%.',
           'Semua jawaban diatas salah'
         ],
-        correct_option_index: 0, // Jawaban A
+        correct_option_index: 0,
         time_limit: 30,
         points: 1000,
       },
@@ -66,7 +66,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '≥10 cm',
           '0 cm'
         ],
-        correct_option_index: 2, // Jawaban C
+        correct_option_index: 2,
         time_limit: 30,
         points: 1000,
       },
@@ -79,7 +79,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '≥ 70%',
           '50%'
         ],
-        correct_option_index: 2, // Jawaban C
+        correct_option_index: 2,
         time_limit: 30,
         points: 1000,
       },
@@ -92,7 +92,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'Mengambil sampel tanah, tanah diayak, bongkahan dibuang',
           'Mengambil sampel tanah langsung dibuang'
         ],
-        correct_option_index: 0, // Jawaban A
+        correct_option_index: 0,
         time_limit: 30,
         points: 1000,
       },
@@ -105,7 +105,7 @@ const MOCK_QUIZZES: Quiz[] = [
           'Lolos ayakan',
           'Semua benar'
         ],
-        correct_option_index: 1, // Jawaban B
+        correct_option_index: 1,
         time_limit: 30,
         points: 1000,
       },
@@ -118,7 +118,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '>=55%',
           '<50%'
         ],
-        correct_option_index: 0, // Jawaban A
+        correct_option_index: 0,
         time_limit: 30,
         points: 1000,
       },
@@ -131,7 +131,7 @@ const MOCK_QUIZZES: Quiz[] = [
           '<60cm',
           '50cm'
         ],
-        correct_option_index: 1, // Jawaban B
+        correct_option_index: 1,
         time_limit: 30,
         points: 1000,
       },
@@ -144,7 +144,68 @@ const MOCK_QUIZZES: Quiz[] = [
           'kedalaman aplikasi (60%) & kerapatan aplikasi (40%)',
           'kedalaman aplikasi (70%) & kerataan aplikasi (30%)'
         ],
-        correct_option_index: 0, // Jawaban A
+        correct_option_index: 0,
+        time_limit: 30,
+        points: 1000,
+      }
+    ]
+  },
+  {
+    id: 'quiz-crown-2',
+    title: 'Quiz Pre Test Refresh WI 2026 (Bibit, Tanam dan Potensi Crown) 🍍',
+    description: 'Evaluasi Standar Kelolosan Bibit, Kerapatan Tanam, Kedalaman Tanam, dan Potensi Crown Nenas',
+    code: 'QCPP-CROWN',
+    allowed_participants: INITIAL_PARTICIPANT_NAMES,
+    questions: [
+      {
+        id: 'cr1',
+        question_text: 'Berapa standar persentase kelolosan bibit pada pengamatan kualitas bibit?',
+        options: [
+          '≥ 95%',
+          '≥ 90%',
+          '< 90%',
+          '80%'
+        ],
+        correct_option_index: 0,
+        time_limit: 30,
+        points: 1000,
+      },
+      {
+        id: 'cr2',
+        question_text: 'Berapa standar populasi / kerapatan tanam nenas per hektar pada lokasi standar?',
+        options: [
+          '60.000 - 65.000 tanaman/ha',
+          '50.000 - 55.000 tanaman/ha',
+          '70.000 - 75.000 tanaman/ha',
+          '40.000 tanaman/ha'
+        ],
+        correct_option_index: 0,
+        time_limit: 30,
+        points: 1000,
+      },
+      {
+        id: 'cr3',
+        question_text: 'Berapa potensi crown/mahkota yang ideal untuk kriteria pengamatan kualitas bibit Nenas?',
+        options: [
+          'Crown Utuh & Sehat tanpa cacat mekanis',
+          'Crown kerdil',
+          'Crown ganda',
+          'Crown layu'
+        ],
+        correct_option_index: 0,
+        time_limit: 30,
+        points: 1000,
+      },
+      {
+        id: 'cr4',
+        question_text: 'Berapa standar kedalaman penanaman bibit di lahan produksi?',
+        options: [
+          '5 - 7 cm (tidak tertimbun tanah)',
+          '10 - 15 cm',
+          '< 3 cm',
+          '20 cm'
+        ],
+        correct_option_index: 0,
         time_limit: 30,
         points: 1000,
       }
@@ -162,6 +223,12 @@ let mockParticipantsStore: Record<string, Participant[]> = {
     avatar: avatarsList[idx % avatarsList.length],
     quiz_id: 'quiz-agri-1',
   })),
+  'quiz-crown-2': INITIAL_PARTICIPANT_NAMES.map((name, idx) => ({
+    id: `p-quiz-crown-${idx}`,
+    name,
+    avatar: avatarsList[idx % avatarsList.length],
+    quiz_id: 'quiz-crown-2',
+  })),
 };
 
 let mockSessionsStore: Record<string, GameSession> = {};
@@ -178,12 +245,19 @@ function notifyMockListeners(channelKey: string, data: any) {
   }
 }
 
-// Service Methods (Supports both Supabase & Mock local storage seamlessly)
-
+// -------------------------------------------------------------
+// VERIFY GAME SESSION PIN
+// -------------------------------------------------------------
 export async function verifyGameSessionPin(pin: string): Promise<GameSession | null> {
   const cleanPin = pin.trim();
-  if (!cleanPin) return null;
 
+  // 1. Check local mock sessions store first
+  const localSess = Object.values(mockSessionsStore).find((s) => s.pin === cleanPin);
+  if (localSess) {
+    return localSess;
+  }
+
+  // 2. Check Supabase DB
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -191,6 +265,7 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
         .select('*, quiz:quizzes(*, questions(*))')
         .eq('pin', cleanPin)
         .single();
+
       if (!error && data) {
         let fullQuiz: Quiz | undefined = undefined;
 
@@ -210,8 +285,8 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
             if (qData && qData.length > 0) {
               fullQuiz.questions = qData;
             } else {
-              const matchedMock = mockQuizzesStore.find((mq) => mq.id === data.quiz_id || mq.code === data.quiz.code);
-              if (matchedMock) {
+              const matchedMock = mockQuizzesStore.find((mq) => mq.id === data.quiz_id || mq.code === data.quiz?.code || mq.title === data.quiz?.title);
+              if (matchedMock && matchedMock.questions.length > 0) {
                 fullQuiz.questions = matchedMock.questions;
               }
             }
@@ -219,56 +294,46 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
         }
 
         if (!fullQuiz) {
-          fullQuiz = mockQuizzesStore.find((mq) => mq.id === data.quiz_id) || mockQuizzesStore[0];
+          fullQuiz = mockQuizzesStore.find((mq) => mq.id === data.quiz_id || mq.code === data.quiz?.code) || mockQuizzesStore[0];
         }
 
-        // Use updated_at timestamp or created_at for wall-clock timer sync
         const startTimestamp = data.updated_at
           ? new Date(data.updated_at).getTime()
           : data.created_at
           ? new Date(data.created_at).getTime()
           : Date.now();
 
-        return {
+        const sess: GameSession = {
           id: data.id,
           pin: data.pin,
           quiz_id: data.quiz_id,
           quiz: fullQuiz,
-          status: data.status,
+          status: data.status as any,
           current_question_index: data.current_question_index || 0,
           question_started_at: startTimestamp,
-        } as GameSession;
+        };
+
+        mockSessionsStore[sess.id] = sess;
+        return sess;
       }
     } catch {
-      // Fallback to local check
+      // Fallback
     }
-  }
-
-  // Check mock sessions store
-  const mockSess = mockSessionsStore[cleanPin] || Object.values(mockSessionsStore).find((s) => s.pin === cleanPin);
-  if (mockSess) {
-    return mockSess;
   }
 
   return null;
 }
 
-export async function fetchParticipantsList(quizId?: string, pin?: string): Promise<Participant[]> {
-  let targetQuizId = quizId;
-  if (!targetQuizId && pin) {
-    const sess = await verifyGameSessionPin(pin);
-    if (sess) {
-      targetQuizId = sess.quiz_id;
-    }
-  }
-
+// -------------------------------------------------------------
+// FETCH PARTICIPANTS FOR QUIZ / ROOM
+// -------------------------------------------------------------
+export async function fetchParticipantsForQuiz(quizId: string): Promise<Participant[]> {
   if (isSupabaseConfigured && supabase) {
     try {
-      let query = supabase.from('participants').select('*');
-      if (targetQuizId) {
-        query = query.eq('quiz_id', targetQuizId);
-      }
-      const { data, error } = await query.order('name', { ascending: true });
+      const { data, error } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('quiz_id', quizId);
       if (!error && data && data.length > 0) {
         return data as Participant[];
       }
@@ -277,45 +342,33 @@ export async function fetchParticipantsList(quizId?: string, pin?: string): Prom
     }
   }
 
-  // If specific quizId is targeted, return its allowed participants
-  if (targetQuizId && mockParticipantsStore[targetQuizId]) {
-    return mockParticipantsStore[targetQuizId];
+  if (mockParticipantsStore[quizId]) {
+    return mockParticipantsStore[quizId];
   }
 
-  if (targetQuizId) {
-    const targetQuiz = mockQuizzesStore.find((q) => q.id === targetQuizId);
-    if (targetQuiz && targetQuiz.allowed_participants) {
-      return targetQuiz.allowed_participants.map((name, idx) => ({
-        id: `p-${targetQuizId}-${idx}`,
-        name,
-        avatar: avatarsList[idx % avatarsList.length],
-        quiz_id: targetQuizId,
-      }));
-    }
-  }
-
-  // Fallback to initial participant list
   return INITIAL_PARTICIPANT_NAMES.map((name, idx) => ({
-    id: `p-init-${idx}`,
+    id: `p-${quizId}-${idx}`,
     name,
     avatar: avatarsList[idx % avatarsList.length],
+    quiz_id: quizId,
   }));
 }
 
-export async function addParticipantName(name: string, avatar: string = '🚀', quizId?: string): Promise<Participant> {
+// Add a single custom participant
+export async function addParticipantToQuiz(quizId: string, name: string, avatar: string = '🚀'): Promise<Participant> {
   const cleanName = name.trim();
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
         .from('participants')
-        .insert([{ name: cleanName, avatar, quiz_id: quizId || null }])
+        .insert([{ quiz_id: quizId, name: cleanName, avatar }])
         .select()
         .single();
       if (!error && data) {
         return data as Participant;
       }
     } catch {
-      // Fallback to local
+      // Fallback
     }
   }
 
@@ -334,6 +387,9 @@ export async function addParticipantName(name: string, avatar: string = '🚀', 
   return newP;
 }
 
+// -------------------------------------------------------------
+// FETCH & CREATE QUIZZES
+// -------------------------------------------------------------
 export async function fetchQuizzes(): Promise<Quiz[]> {
   if (isSupabaseConfigured && supabase) {
     try {
@@ -341,11 +397,31 @@ export async function fetchQuizzes(): Promise<Quiz[]> {
         .from('quizzes')
         .select('*, questions(*)');
       if (!error && data && data.length > 0) {
-        return data.map((q: any) => ({
-          ...q,
-          questions: q.questions || [],
-          allowed_participants: q.allowed_participants || [],
-        })) as Quiz[];
+        const quizList: Quiz[] = [];
+        for (const q of data) {
+          let qList = q.questions || [];
+          if (!qList || qList.length === 0) {
+            const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', q.id);
+            if (qData && qData.length > 0) {
+              qList = qData;
+            }
+          }
+
+          // If still empty, check mockQuizzesStore by code or title
+          if (!qList || qList.length === 0) {
+            const matchedMock = mockQuizzesStore.find((mq) => mq.id === q.id || mq.code === q.code || mq.title === q.title);
+            if (matchedMock && matchedMock.questions.length > 0) {
+              qList = matchedMock.questions;
+            }
+          }
+
+          quizList.push({
+            ...q,
+            questions: qList,
+            allowed_participants: q.allowed_participants || [],
+          });
+        }
+        return quizList;
       }
     } catch {
       // Fallback
@@ -381,7 +457,6 @@ export async function createQuiz(quiz: Omit<Quiz, 'id'>): Promise<Quiz> {
         }));
         await supabase.from('questions').insert(qInserts);
 
-        // Also insert allowed participants for this quiz if provided
         if (quiz.allowed_participants && quiz.allowed_participants.length > 0) {
           const pInserts = quiz.allowed_participants.map((pName, idx) => ({
             quiz_id: quizId,
@@ -391,7 +466,9 @@ export async function createQuiz(quiz: Omit<Quiz, 'id'>): Promise<Quiz> {
           await supabase.from('participants').insert(pInserts);
         }
 
-        return { ...fullQuiz, id: quizId };
+        const savedQuiz = { ...fullQuiz, id: quizId };
+        mockQuizzesStore.unshift(savedQuiz);
+        return savedQuiz;
       }
     } catch {
       // Fallback
@@ -400,7 +477,6 @@ export async function createQuiz(quiz: Omit<Quiz, 'id'>): Promise<Quiz> {
 
   mockQuizzesStore.unshift(fullQuiz);
 
-  // Store mock participants for this new quiz
   if (quiz.allowed_participants && quiz.allowed_participants.length > 0) {
     mockParticipantsStore[newId] = quiz.allowed_participants.map((pName, idx) => ({
       id: `p-${newId}-${idx}`,
@@ -413,25 +489,63 @@ export async function createQuiz(quiz: Omit<Quiz, 'id'>): Promise<Quiz> {
   return fullQuiz;
 }
 
+export async function deleteQuiz(quizId: string): Promise<boolean> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from('questions').delete().eq('quiz_id', quizId);
+      await supabase.from('participants').delete().eq('quiz_id', quizId);
+      await supabase.from('quizzes').delete().eq('id', quizId);
+    } catch (err) {
+      console.warn('Supabase delete quiz error:', err);
+    }
+  }
+
+  mockQuizzesStore = mockQuizzesStore.filter((q) => q.id !== quizId);
+  delete mockParticipantsStore[quizId];
+
+  return true;
+}
+
+// -------------------------------------------------------------
+// GAME SESSIONS (HOST)
+// -------------------------------------------------------------
 export async function createGameSession(quizId: string): Promise<GameSession> {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
   let quiz = mockQuizzesStore.find((q) => q.id === quizId);
 
-  if (!quiz && isSupabaseConfigured && supabase) {
+  if (isSupabaseConfigured && supabase) {
     try {
       const { data } = await supabase.from('quizzes').select('*, questions(*)').eq('id', quizId).single();
       if (data) {
-        quiz = {
-          ...data,
-          questions: data.questions || [],
-          allowed_participants: data.allowed_participants || [],
-        } as Quiz;
+        let qList = data.questions || [];
+        if (!qList || qList.length === 0) {
+          const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', quizId);
+          if (qData && qData.length > 0) qList = qData;
+        }
+        if (qList && qList.length > 0) {
+          quiz = {
+            ...data,
+            questions: qList,
+            allowed_participants: data.allowed_participants || [],
+          } as Quiz;
+        }
       }
     } catch {
       // ignore
     }
   }
-  if (!quiz) quiz = mockQuizzesStore[0];
+
+  if (!quiz) {
+    quiz = mockQuizzesStore.find((q) => q.id === quizId || q.code.includes('CROWN')) || mockQuizzesStore[0];
+  }
+
+  // Guarantee quiz has its exact questions
+  if (!quiz.questions || quiz.questions.length === 0) {
+    const matched = mockQuizzesStore.find((mq) => mq.id === quizId || mq.code === quiz?.code || mq.title === quiz?.title);
+    if (matched && matched.questions && matched.questions.length > 0) {
+      quiz.questions = matched.questions;
+    }
+  }
 
   const session: GameSession = {
     id: `sess-${Date.now()}`,
@@ -454,92 +568,138 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
         session.id = data.id;
       }
     } catch {
-      // Fallback
+      // Fallback to local
     }
   }
 
-  mockSessionsStore[pin] = session;
-  mockSessionParticipantsStore[session.id] = [];
-  mockPlayerAnswersStore[session.id] = [];
+  mockSessionsStore[session.id] = session;
   return session;
 }
 
+export async function updateGameSessionState(
+  sessionId: string,
+  status: 'WAITING' | 'QUESTION' | 'LEADERBOARD' | 'FINISHED',
+  questionIndex: number = 0
+): Promise<boolean> {
+  const now = Date.now();
+  const session = mockSessionsStore[sessionId];
+  if (session) {
+    session.status = status;
+    session.current_question_index = questionIndex;
+    session.question_started_at = now;
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from('game_sessions')
+        .update({
+          status,
+          current_question_index: questionIndex,
+          updated_at: new Date(now).toISOString(),
+        })
+        .eq('id', sessionId);
+    } catch {
+      // ignore
+    }
+  }
+
+  notifyMockListeners(`session:${sessionId}`, {
+    type: 'SESSION_UPDATED',
+    status,
+    questionIndex,
+    questionStartedAt: now,
+  });
+
+  return true;
+}
+
+// -------------------------------------------------------------
+// SESSION PARTICIPANTS (LOBBY & GAMEPLAY)
+// -------------------------------------------------------------
 export async function joinGameSession(
-  pin: string,
+  sessionId: string,
   participantName: string,
   avatar: string = '🚀'
-): Promise<{ session: GameSession; participant: SessionParticipant; error?: string } | null> {
-  const session = await verifyGameSessionPin(pin);
-  if (!session) {
-    return null;
-  }
-
-  // Check if participant name is ALREADY ACTIVE in this room session
-  const currentParticipants = await fetchSessionParticipants(session.id);
-  const isAlreadyActive = currentParticipants.some(
-    (p) => p.participant_name.toLowerCase().trim() === participantName.toLowerCase().trim()
-  );
-
-  if (isAlreadyActive) {
-    return {
-      session,
-      participant: null as any,
-      error: `Nama "${participantName}" sedang aktif digunakan oleh perangkat lain di room ini! Silakan pilih nama Anda yang belum terpakai.`,
-    };
-  }
-
+): Promise<SessionParticipant | null> {
+  const cleanName = participantName.trim();
   const newPart: SessionParticipant = {
-    id: `sp-${Date.now()}-${Math.random()}`,
-    session_id: session.id,
-    participant_name: participantName,
+    id: `sp-${Date.now()}`,
+    session_id: sessionId,
+    participant_name: cleanName,
     avatar,
     score: 0,
     streak: 0,
   };
 
+  if (!mockSessionParticipantsStore[sessionId]) {
+    mockSessionParticipantsStore[sessionId] = [];
+  }
+
+  const existingIdx = mockSessionParticipantsStore[sessionId].findIndex(
+    (p) => p.participant_name.toLowerCase() === cleanName.toLowerCase()
+  );
+  if (existingIdx >= 0) {
+    mockSessionParticipantsStore[sessionId][existingIdx] = {
+      ...mockSessionParticipantsStore[sessionId][existingIdx],
+      avatar,
+    };
+  } else {
+    mockSessionParticipantsStore[sessionId].push(newPart);
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
+      const { data: existing } = await supabase
         .from('session_participants')
-        .upsert(
-          [{ session_id: session.id, participant_name: participantName, avatar, score: 0, streak: 0 }],
-          { onConflict: 'session_id,participant_name' }
-        )
-        .select()
+        .select('*')
+        .eq('session_id', sessionId)
+        .eq('participant_name', cleanName)
         .single();
-      if (!error && data) {
-        newPart.id = data.id;
+
+      if (existing) {
+        await supabase
+          .from('session_participants')
+          .update({ avatar })
+          .eq('id', existing.id);
+      } else {
+        await supabase
+          .from('session_participants')
+          .insert([
+            {
+              session_id: sessionId,
+              participant_name: cleanName,
+              avatar,
+              score: 0,
+              streak: 0,
+            },
+          ]);
       }
-    } catch (err) {
-      console.warn('Supabase join failed, falling back to local memory:', err);
+    } catch {
+      // ignore
     }
   }
 
-  if (!mockSessionParticipantsStore[session.id]) {
-    mockSessionParticipantsStore[session.id] = [];
-  }
-
-  const existingIdx = mockSessionParticipantsStore[session.id].findIndex((p) => p.participant_name === participantName);
-  if (existingIdx >= 0) {
-    mockSessionParticipantsStore[session.id][existingIdx].avatar = avatar;
-  } else {
-    mockSessionParticipantsStore[session.id].push(newPart);
-  }
-
-  // Broadcast join event locally
-  notifyMockListeners(`session-${session.id}`, {
+  notifyMockListeners(`session:${sessionId}`, {
     type: 'PLAYER_JOINED',
-    participants: mockSessionParticipantsStore[session.id],
+    participant: newPart,
+    participants: mockSessionParticipantsStore[sessionId],
   });
 
-  return {
-    session,
-    participant: newPart,
-  };
+  return newPart;
 }
 
-export async function leaveGameSession(sessionId: string, participantName: string): Promise<void> {
-  if (!sessionId || !participantName) return;
+export async function leaveGameSession(
+  sessionId: string,
+  participantName: string
+): Promise<boolean> {
+  const cleanName = participantName.trim();
+
+  if (mockSessionParticipantsStore[sessionId]) {
+    mockSessionParticipantsStore[sessionId] = mockSessionParticipantsStore[sessionId].filter(
+      (p) => p.participant_name.toLowerCase() !== cleanName.toLowerCase()
+    );
+  }
 
   if (isSupabaseConfigured && supabase) {
     try {
@@ -547,123 +707,63 @@ export async function leaveGameSession(sessionId: string, participantName: strin
         .from('session_participants')
         .delete()
         .eq('session_id', sessionId)
-        .eq('participant_name', participantName);
-    } catch (err) {
-      console.warn('Supabase leave session error:', err);
+        .eq('participant_name', cleanName);
+    } catch {
+      // ignore
     }
   }
 
-  if (mockSessionParticipantsStore[sessionId]) {
-    mockSessionParticipantsStore[sessionId] = mockSessionParticipantsStore[sessionId].filter(
-      (p) => p.participant_name !== participantName
-    );
-  }
-
-  notifyMockListeners(`session-${sessionId}`, {
-    type: 'PLAYER_JOINED',
+  notifyMockListeners(`session:${sessionId}`, {
+    type: 'PLAYER_LEFT',
+    participantName: cleanName,
     participants: mockSessionParticipantsStore[sessionId] || [],
   });
+
+  return true;
 }
 
-export async function fetchSessionParticipants(sessionId?: string, pin?: string): Promise<SessionParticipant[]> {
-  let targetSessionId = sessionId;
-  if (!targetSessionId && pin) {
-    const sess = await verifyGameSessionPin(pin);
-    if (sess) {
-      targetSessionId = sess.id;
-    }
-  }
+export async function fetchSessionParticipants(sessionId: string, currentParticipantName?: string): Promise<SessionParticipant[]> {
+  let participants: SessionParticipant[] = [];
 
-  if (isSupabaseConfigured && supabase && targetSessionId) {
+  if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
         .from('session_participants')
         .select('*')
-        .eq('session_id', targetSessionId)
-        .order('created_at', { ascending: true });
-      if (!error && data && data.length > 0) {
-        // Deduplicate participants by participant_name
-        const uniqueMap = new Map<string, SessionParticipant>();
-        (data as SessionParticipant[]).forEach((p) => {
-          uniqueMap.set(p.participant_name, p);
-        });
-        return Array.from(uniqueMap.values());
+        .eq('session_id', sessionId);
+      if (!error && data) {
+        participants = data as SessionParticipant[];
       }
     } catch {
       // Fallback
     }
   }
 
-  if (targetSessionId && mockSessionParticipantsStore[targetSessionId]) {
-    const list = mockSessionParticipantsStore[targetSessionId];
-    const uniqueMap = new Map<string, SessionParticipant>();
-    list.forEach((p) => {
-      uniqueMap.set(p.participant_name, p);
-    });
-    return Array.from(uniqueMap.values());
+  if (participants.length === 0) {
+    participants = mockSessionParticipantsStore[sessionId] || [];
+  } else {
+    mockSessionParticipantsStore[sessionId] = participants;
   }
 
-  if (pin && mockSessionsStore[pin]) {
-    const sess = mockSessionsStore[pin];
-    return mockSessionParticipantsStore[sess.id] || [];
-  }
-
-  return [];
-}
-
-export async function updateSessionStatus(
-  sessionId: string,
-  status: GameSession['status'],
-  questionIndex?: number,
-  startedAt?: number
-) {
-  const startTimestamp = startedAt || Date.now();
-  const isoTime = new Date(startTimestamp).toISOString();
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      // Update status and timestamp in Supabase DB
-      const { error } = await supabase
-        .from('game_sessions')
-        .update({
-          status,
-          current_question_index: questionIndex ?? 0,
-          created_at: isoTime,
-        })
-        .eq('id', sessionId);
-
-      if (error) {
-        await supabase
-          .from('game_sessions')
-          .update({
-            status,
-            current_question_index: questionIndex ?? 0,
-          })
-          .eq('id', sessionId);
-      }
-    } catch {
-      // Fallback
+  if (currentParticipantName) {
+    const isStillIn = participants.some(
+      (p) => p.participant_name.toLowerCase() === currentParticipantName.trim().toLowerCase()
+    );
+    if (!isStillIn) {
+      return participants;
     }
   }
 
-  Object.values(mockSessionsStore).forEach((s) => {
-    if (s.id === sessionId) {
-      s.status = status;
-      if (questionIndex !== undefined) {
-        s.current_question_index = questionIndex;
-      }
-      s.question_started_at = startTimestamp;
-    }
-  });
-
-  notifyMockListeners(`session-${sessionId}`, {
-    type: 'SESSION_UPDATED',
-    status,
-    questionIndex,
-    startedAt: startTimestamp,
-  });
+  return participants;
 }
 
+export function getSessionParticipants(sessionId: string): SessionParticipant[] {
+  return mockSessionParticipantsStore[sessionId] || [];
+}
+
+// -------------------------------------------------------------
+// PLAYER ANSWERS & SCORE UPDATES
+// -------------------------------------------------------------
 export async function submitPlayerAnswer(
   sessionId: string,
   questionId: string,
@@ -672,8 +772,8 @@ export async function submitPlayerAnswer(
   isCorrect: boolean,
   pointsEarned: number,
   timeTaken: number
-): Promise<PlayerAnswer> {
-  const answer: PlayerAnswer = {
+): Promise<boolean> {
+  const newAns: PlayerAnswer = {
     id: `ans-${Date.now()}`,
     session_id: sessionId,
     question_id: questionId,
@@ -684,16 +784,25 @@ export async function submitPlayerAnswer(
     time_taken: timeTaken,
   };
 
+  if (!mockPlayerAnswersStore[sessionId]) {
+    mockPlayerAnswersStore[sessionId] = [];
+  }
+  mockPlayerAnswersStore[sessionId].push(newAns);
+
+  const parts = mockSessionParticipantsStore[sessionId] || [];
+  const part = parts.find((p) => p.participant_name === participantName);
+  if (part) {
+    part.score += pointsEarned;
+    part.streak = isCorrect ? part.streak + 1 : 0;
+    part.last_points_gained = pointsEarned;
+    part.last_is_correct = isCorrect;
+    if (isCorrect) {
+      part.correct_answers_count = (part.correct_answers_count || 0) + 1;
+    }
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
-      // Delete any previous answer for this question by the same participant to prevent duplicate counting
-      await supabase
-        .from('player_answers')
-        .delete()
-        .eq('session_id', sessionId)
-        .eq('question_id', questionId)
-        .eq('participant_name', participantName);
-
       await supabase.from('player_answers').insert([
         {
           session_id: sessionId,
@@ -703,141 +812,31 @@ export async function submitPlayerAnswer(
           is_correct: isCorrect,
           points_earned: pointsEarned,
           time_taken: timeTaken,
-        }
+        },
       ]);
 
-      // Recalculate exact total score and streak for participant from player_answers
-      const { data: allAnswers } = await supabase
-        .from('player_answers')
-        .select('is_correct, points_earned')
-        .eq('session_id', sessionId)
-        .eq('participant_name', participantName);
-
-      let exactTotalScore = 0;
-      let exactStreak = 0;
-
-      if (allAnswers && allAnswers.length > 0) {
-        allAnswers.forEach((ans) => {
-          if (ans.is_correct) {
-            exactTotalScore += (ans.points_earned || 0);
-            exactStreak += 1;
-          } else {
-            exactStreak = 0;
-          }
-        });
+      if (part) {
+        await supabase
+          .from('session_participants')
+          .update({
+            score: part.score,
+            streak: part.streak,
+          })
+          .eq('session_id', sessionId)
+          .eq('participant_name', participantName);
       }
-
-      await supabase
-        .from('session_participants')
-        .update({ score: exactTotalScore, streak: exactStreak })
-        .eq('session_id', sessionId)
-        .eq('participant_name', participantName);
     } catch {
-      // Fallback
+      // ignore
     }
   }
 
-  if (!mockPlayerAnswersStore[sessionId]) {
-    mockPlayerAnswersStore[sessionId] = [];
-  }
-
-  // Update or insert in mock store to prevent duplicate answer entries
-  const existingIdx = mockPlayerAnswersStore[sessionId].findIndex(
-    (a) => a.question_id === questionId && a.participant_name === participantName
-  );
-  if (existingIdx >= 0) {
-    mockPlayerAnswersStore[sessionId][existingIdx] = answer;
-  } else {
-    mockPlayerAnswersStore[sessionId].push(answer);
-  }
-
-  // Update player score in session
-  if (mockSessionParticipantsStore[sessionId]) {
-    const part = mockSessionParticipantsStore[sessionId].find((p) => p.participant_name === participantName);
-    if (part) {
-      if (isCorrect) {
-        part.score += pointsEarned;
-        part.streak += 1;
-      } else {
-        part.streak = 0;
-      }
-      part.last_points_gained = pointsEarned;
-      part.last_is_correct = isCorrect;
-    }
-  }
-
-  notifyMockListeners(`session-${sessionId}`, {
+  notifyMockListeners(`session:${sessionId}`, {
     type: 'ANSWER_SUBMITTED',
-    answer,
-    participants: mockSessionParticipantsStore[sessionId],
+    answer: newAns,
+    participants: parts,
   });
 
-  return answer;
-}
-
-export function subscribeToSession(sessionId: string, callback: ListenerCallback) {
-  let channel: any = null;
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      channel = supabase
-        .channel(`room-${sessionId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` },
-          async () => {
-            const updated = await fetchSessionParticipants(sessionId);
-            callback({ type: 'PLAYER_JOINED', participants: updated });
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
-          (payload: any) => {
-            callback({
-              type: 'SESSION_UPDATED',
-              status: payload.new?.status,
-              questionIndex: payload.new?.current_question_index,
-            });
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'player_answers', filter: `session_id=eq.${sessionId}` },
-          async (payload: any) => {
-            const updated = await fetchSessionParticipants(sessionId);
-            callback({
-              type: 'ANSWER_SUBMITTED',
-              answer: payload.new,
-              participants: updated,
-            });
-          }
-        )
-        .subscribe();
-    } catch (err) {
-      console.warn('Supabase Realtime subscription error:', err);
-    }
-  }
-
-  // Also register local broadcaster fallback
-  const channelKey = `session-${sessionId}`;
-  if (!mockBroadcasters[channelKey]) {
-    mockBroadcasters[channelKey] = new Set();
-  }
-  mockBroadcasters[channelKey].add(callback);
-
-  return () => {
-    if (channel && supabase) {
-      supabase.removeChannel(channel);
-    }
-    if (mockBroadcasters[channelKey]) {
-      mockBroadcasters[channelKey].delete(callback);
-    }
-  };
-}
-
-export function getSessionParticipants(sessionId: string): SessionParticipant[] {
-  return mockSessionParticipantsStore[sessionId] || [];
+  return true;
 }
 
 export async function fetchPlayerAnswersForQuestion(sessionId: string, questionId: string): Promise<PlayerAnswer[]> {
@@ -847,10 +846,8 @@ export async function fetchPlayerAnswersForQuestion(sessionId: string, questionI
         .from('player_answers')
         .select('*')
         .eq('session_id', sessionId)
-        .eq('question_id', questionId)
-        .order('created_at', { ascending: true });
+        .eq('question_id', questionId);
       if (!error && data) {
-        // Keep ONLY the latest answer choice per participant
         const latestMap = new Map<string, PlayerAnswer>();
         (data as PlayerAnswer[]).forEach((ans) => {
           latestMap.set(ans.participant_name, ans);
@@ -879,6 +876,9 @@ export function getPlayerAnswersForQuestion(sessionId: string, questionId: strin
   return Array.from(latestMap.values());
 }
 
+// -------------------------------------------------------------
+// COMPLETED SESSIONS HISTORY REKAP
+// -------------------------------------------------------------
 export async function fetchCompletedSessionResults(): Promise<CompletedSessionResult[]> {
   if (isSupabaseConfigured && supabase) {
     try {
@@ -891,6 +891,20 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
         const results: CompletedSessionResult[] = [];
         for (const sess of sessionsData) {
           const parts = await fetchSessionParticipants(sess.id);
+          
+          let totalQ = 0;
+          const { count } = await supabase
+            .from('questions')
+            .select('id', { count: 'exact', head: true })
+            .eq('quiz_id', sess.quiz_id);
+
+          if (count && count > 0) {
+            totalQ = count;
+          } else {
+            const matchedQuiz = mockQuizzesStore.find((mq) => mq.id === sess.quiz_id || mq.code === sess.quiz?.code || mq.title === sess.quiz?.title);
+            totalQ = matchedQuiz?.questions?.length || (sess.quiz?.questions || []).length || 4;
+          }
+
           results.push({
             id: sess.id,
             pin: sess.pin,
@@ -898,7 +912,7 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
             quiz_title: sess.quiz?.title || 'Kuis QCPP',
             quiz_code: sess.quiz?.code || 'QCPP',
             created_at: sess.created_at || new Date().toISOString(),
-            total_questions: (sess.quiz?.questions || []).length || 8,
+            total_questions: totalQ,
             total_participants: parts.length,
             participants: parts.sort((a, b) => b.score - a.score),
           });
@@ -910,7 +924,7 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
     }
   }
 
-  // Demo fallback results with full leaderboard ranking of participants
+  // Demo fallback results with exact questions count per quiz
   return [
     {
       id: 'sess-history-1',
@@ -922,34 +936,102 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
       total_questions: 8,
       total_participants: 21,
       participants: [
-        { id: 'h1', session_id: 'sess-history-1', participant_name: 'Jaelani', avatar: '🦊', score: 7850, streak: 8 },
-        { id: 'h2', session_id: 'sess-history-1', participant_name: 'Revansa Helsa Kuswana', avatar: '🦄', score: 7420, streak: 7 },
-        { id: 'h3', session_id: 'sess-history-1', participant_name: 'Sugiyanto', avatar: '🦉', score: 6910, streak: 7 },
-        { id: 'h4', session_id: 'sess-history-1', participant_name: 'Tri Widodo', avatar: '🦁', score: 6540, streak: 6 },
-        { id: 'h5', session_id: 'sess-history-1', participant_name: 'Rafika Dewi', avatar: '🐱', score: 6210, streak: 6 },
-        { id: 'h6', session_id: 'sess-history-1', participant_name: 'M Iqbal Maulana', avatar: '🐯', score: 5890, streak: 5 },
-        { id: 'h7', session_id: 'sess-history-1', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 5430, streak: 5 },
-        { id: 'h8', session_id: 'sess-history-1', participant_name: 'Yohan Yogaswara', avatar: '🐉', score: 5120, streak: 4 },
-        { id: 'h9', session_id: 'sess-history-1', participant_name: 'Indra Yulianto', avatar: '🚀', score: 4800, streak: 4 },
-        { id: 'h10', session_id: 'sess-history-1', participant_name: 'Rizka Esty Wulandari', avatar: '🤖', score: 4350, streak: 3 },
+        { id: 'h1', session_id: 'sess-history-1', participant_name: 'Jaelani', avatar: '🦊', score: 7850, streak: 8, correct_answers_count: 8 },
+        { id: 'h2', session_id: 'sess-history-1', participant_name: 'Revansa Helsa Kuswana', avatar: '🦄', score: 7420, streak: 7, correct_answers_count: 7 },
+        { id: 'h3', session_id: 'sess-history-1', participant_name: 'Sugiyanto', avatar: '🦉', score: 6910, streak: 7, correct_answers_count: 7 },
+        { id: 'h4', session_id: 'sess-history-1', participant_name: 'Tri Widodo', avatar: '🦁', score: 6540, streak: 6, correct_answers_count: 6 },
+        { id: 'h5', session_id: 'sess-history-1', participant_name: 'Rafika Dewi', avatar: '🐱', score: 6210, streak: 6, correct_answers_count: 6 },
+        { id: 'h6', session_id: 'sess-history-1', participant_name: 'M Iqbal Maulana', avatar: '🐯', score: 5890, streak: 5, correct_answers_count: 5 },
+        { id: 'h7', session_id: 'sess-history-1', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 5430, streak: 5, correct_answers_count: 5 },
+        { id: 'h8', session_id: 'sess-history-1', participant_name: 'Yohan Yogaswara', avatar: '🐉', score: 5120, streak: 4, correct_answers_count: 4 },
+        { id: 'h9', session_id: 'sess-history-1', participant_name: 'Indra Yulianto', avatar: '🚀', score: 4800, streak: 4, correct_answers_count: 4 },
+        { id: 'h10', session_id: 'sess-history-1', participant_name: 'Rizka Esty Wulandari', avatar: '🤖', score: 4350, streak: 3, correct_answers_count: 3 },
       ],
     },
     {
       id: 'sess-history-2',
       pin: '610492',
-      quiz_id: 'quiz-landprep-2',
-      quiz_title: 'Evaluasi Kesiapan Lahan & Finishing Ridger 🌾',
-      quiz_code: 'QCPP-LANDPREP',
+      quiz_id: 'quiz-crown-2',
+      quiz_title: 'Quiz Pre Test Refresh WI 2026 (Bibit, Tanam dan Potensi Crown) 🍍',
+      quiz_code: 'QCPP-CROWN',
       created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
-      total_questions: 5,
+      total_questions: 4,
       total_participants: 18,
       participants: [
-        { id: 'h21', session_id: 'sess-history-2', participant_name: 'Rafika Dewi', avatar: '🦄', score: 4820, streak: 5 },
-        { id: 'h22', session_id: 'sess-history-2', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 4510, streak: 5 },
-        { id: 'h23', session_id: 'sess-history-2', participant_name: 'Yohan Yogaswara', avatar: '🦁', score: 4150, streak: 4 },
-        { id: 'h24', session_id: 'sess-history-2', participant_name: 'Zakiyatun Nafsiah', avatar: '🤖', score: 3980, streak: 4 },
-        { id: 'h25', session_id: 'sess-history-2', participant_name: 'Yahya Maulana', avatar: '👾', score: 3750, streak: 3 },
+        { id: 'h21', session_id: 'sess-history-2', participant_name: 'Rafika Dewi', avatar: '🦄', score: 3950, streak: 4, correct_answers_count: 4 },
+        { id: 'h22', session_id: 'sess-history-2', participant_name: 'Anggi Agung Pambudi', avatar: '🐼', score: 3810, streak: 4, correct_answers_count: 4 },
+        { id: 'h23', session_id: 'sess-history-2', participant_name: 'Yohan Yogaswara', avatar: '🦁', score: 2950, streak: 3, correct_answers_count: 3 },
+        { id: 'h24', session_id: 'sess-history-2', participant_name: 'Zakiyatun Nafsiah', avatar: '🤖', score: 2880, streak: 3, correct_answers_count: 3 },
+        { id: 'h25', session_id: 'sess-history-2', participant_name: 'Yahya Maulana', avatar: '👾', score: 1950, streak: 2, correct_answers_count: 2 },
       ],
     },
   ];
 }
+
+// -------------------------------------------------------------
+// REALTIME SUBSCRIPTION SYSTEM
+// -------------------------------------------------------------
+export function subscribeToSession(sessionId: string, callback: (event: any) => void) {
+  if (!mockBroadcasters[sessionId]) {
+    mockBroadcasters[sessionId] = new Set();
+  }
+  mockBroadcasters[sessionId].add(callback);
+
+  if (isSupabaseConfigured && supabase) {
+    const channel = supabase
+      .channel(`game_session:${sessionId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+        (payload) => {
+          callback({
+            type: 'SESSION_UPDATED',
+            status: payload.new.status,
+            questionIndex: payload.new.current_question_index,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` },
+        async () => {
+          const parts = await fetchSessionParticipants(sessionId);
+          callback({
+            type: 'PLAYER_JOINED',
+            participants: parts,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'player_answers', filter: `session_id=eq.${sessionId}` },
+        (payload) => {
+          callback({
+            type: 'ANSWER_SUBMITTED',
+            answer: payload.new,
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (mockBroadcasters[sessionId]) {
+        mockBroadcasters[sessionId].delete(callback);
+      }
+    };
+  }
+
+  return () => {
+    if (mockBroadcasters[sessionId]) {
+      mockBroadcasters[sessionId].delete(callback);
+    }
+  };
+}
+
+// Export Aliases for Component Backward Compatibility
+export const fetchParticipantsList = fetchParticipantsForQuiz;
+export const addParticipantName = addParticipantToQuiz;
+export const updateSessionStatus = updateGameSessionState;
+
+
