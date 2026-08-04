@@ -507,60 +507,6 @@ export async function deleteQuiz(quizId: string): Promise<boolean> {
   return true;
 }
 
-export async function updateQuiz(quizId: string, updatedData: Partial<Quiz>): Promise<Quiz | null> {
-  const existingIdx = mockQuizzesStore.findIndex((q) => q.id === quizId);
-
-  const prev = existingIdx >= 0 ? mockQuizzesStore[existingIdx] : null;
-  const updatedQuiz: Quiz = {
-    id: quizId,
-    title: updatedData.title || prev?.title || 'Kuis QCPP',
-    description: updatedData.description !== undefined ? updatedData.description : (prev?.description || ''),
-    code: updatedData.code || prev?.code || 'QCPP',
-    allowed_participants: updatedData.allowed_participants || prev?.allowed_participants || [],
-    questions: updatedData.questions || prev?.questions || [],
-  };
-
-  if (existingIdx >= 0) {
-    mockQuizzesStore[existingIdx] = updatedQuiz;
-  } else {
-    mockQuizzesStore.unshift(updatedQuiz);
-  }
-
-  if (isSupabaseConfigured && supabase) {
-    try {
-      // 1. Update quizzes table
-      await supabase
-        .from('quizzes')
-        .update({
-          title: updatedQuiz.title,
-          description: updatedQuiz.description,
-          allowed_participants: updatedQuiz.allowed_participants,
-        })
-        .eq('id', quizId);
-
-      // 2. Refresh questions table for this quiz_id
-      if (updatedData.questions) {
-        await supabase.from('questions').delete().eq('quiz_id', quizId);
-
-        const qInserts = updatedQuiz.questions.map((q) => ({
-          quiz_id: quizId,
-          question_text: q.question_text,
-          options: q.options,
-          correct_option_index: q.correct_option_index,
-          time_limit: q.time_limit || 30,
-          points: q.points || 1000,
-        }));
-
-        await supabase.from('questions').insert(qInserts);
-      }
-    } catch (err) {
-      console.warn('Supabase update quiz error:', err);
-    }
-  }
-
-  return updatedQuiz;
-}
-
 // -------------------------------------------------------------
 // GAME SESSIONS (HOST)
 // -------------------------------------------------------------

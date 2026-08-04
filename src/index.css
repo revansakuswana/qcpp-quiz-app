@@ -3,24 +3,18 @@
 @tailwind utilities;
 
 @layer base {
-  html {
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
-  }
   body {
     background-color: #1c0650;
     background-image: radial-gradient(circle at 50% 0%, #37127e 0%, #1c0650 70%);
     background-attachment: fixed;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
-    overscroll-behavior-y: none;
   }
 }
 
 /* Performance Hardware Acceleration Helper */
 .gpu-accelerated {
   transform: translateZ(0);
-  will-change: transform, scroll-position;
   backface-visibility: hidden;
   perspective: 1000px;
 }
@@ -37,16 +31,16 @@
 
 /* Custom Lightweight Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(18, 4, 45, 0.4);
+  background: rgba(0, 0, 0, 0.15);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.45);
+  background: rgba(255, 255, 255, 0.25);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 85, 247, 0.75);
+  background: rgba(255, 255, 255, 0.45);
 }

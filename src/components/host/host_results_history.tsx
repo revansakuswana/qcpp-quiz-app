@@ -285,7 +285,7 @@ export const HostResultsHistory: React.FC = () => {
                     className="w-full sm:w-auto px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl border border-emerald-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-                    <span>Export Data (CSV)</span>
+                    <span>Export Data (Excel / CSV) 📥</span>
                   </button>
                 </div>
               </div>
@@ -296,8 +296,8 @@ export const HostResultsHistory: React.FC = () => {
 
       {/* FULL LEADERBOARD DETAIL MODAL POPUP */}
       {selectedSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
-          <div className="w-full max-w-4xl bg-[#1e074d] border-2 border-purple-400/30 rounded-3xl p-5 sm:p-8 max-h-[85vh] flex flex-col shadow-2xl relative">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+          <div className="w-full max-w-4xl bg-[#240a5e] border-2 border-white/20 rounded-3xl p-5 sm:p-8 max-h-[90vh] flex flex-col shadow-2xl relative">
             {/* Close Button */}
             <button
               onClick={() => setSelectedSession(null)}
@@ -327,20 +327,20 @@ export const HostResultsHistory: React.FC = () => {
                 value={modalSearch}
                 onChange={(e) => setModalSearch(e.target.value)}
                 placeholder="Cari nama peserta..."
-                className="w-full pl-9 pr-3 py-2 bg-[#12032d] border border-purple-400/30 rounded-xl text-xs text-white placeholder-purple-300/60 focus:outline-none focus:ring-1 focus:ring-qcpp-yellow"
+                className="w-full pl-9 pr-3 py-2 bg-black/40 border border-white/20 rounded-xl text-xs text-white placeholder-purple-300/60 focus:outline-none focus:ring-1 focus:ring-qcpp-yellow"
               />
             </div>
 
-            {/* Full Participants Ranking Table (Fast 60fps Smooth Scroll & Solid Header) */}
-            <div className="flex-1 overflow-y-auto border border-purple-400/20 rounded-2xl bg-[#140436] scrollbar-thin scrollbar-thumb-purple-500/40 overscroll-contain">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-[#2b0b6e] text-purple-200 uppercase font-bold sticky top-0 border-b border-purple-400/30 z-20 shadow-md">
+            {/* Full Participants Ranking Table */}
+            <div className="flex-1 overflow-y-auto border border-white/10 rounded-2xl bg-black/20 scrollbar-thin">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-purple-950/80 text-purple-200 uppercase font-bold sticky top-0 border-b border-white/10">
                   <tr>
-                    <th className="py-3.5 px-4 bg-[#2b0b6e]">Peringkat</th>
-                    <th className="py-3.5 px-4 bg-[#2b0b6e]">Peserta</th>
-                    <th className="py-3.5 px-4 text-center bg-[#2b0b6e]">Jawaban Benar</th>
-                    <th className="py-3.5 px-4 text-center bg-[#2b0b6e]">Streak</th>
-                    <th className="py-3.5 px-4 text-right bg-[#2b0b6e]">Skor Akhir</th>
+                    <th className="py-3 px-4">Peringkat</th>
+                    <th className="py-3 px-4">Peserta</th>
+                    <th className="py-3 px-4 text-center">Jawaban Benar</th>
+                    <th className="py-3 px-4 text-center">Streak</th>
+                    <th className="py-3 px-4 text-right">Skor Akhir</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -351,8 +351,7 @@ export const HostResultsHistory: React.FC = () => {
                     return (
                       <tr
                         key={p.id || idx}
-                        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 44px' }}
-                        className={`hover:bg-purple-600/20 transition-colors ${
+                        className={`hover:bg-white/10 transition-colors ${
                           idx === 0
                             ? 'bg-amber-500/10 font-bold text-amber-200'
                             : idx === 1
