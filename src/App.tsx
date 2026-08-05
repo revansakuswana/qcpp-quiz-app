@@ -20,7 +20,6 @@ import {
 } from "./types/quiz";
 import {
   fetchQuizzes,
-  mockQuizzesStore,
   createGameSession,
   updateSessionStatus,
   submitPlayerAnswer,
@@ -109,21 +108,8 @@ export const App: React.FC = () => {
   useEffect(() => {
     async function initApp() {
       try {
-        // Fast Promise.race timeout (2s) so UI renders instantly even on slow/pending cloud networks
-        const fetchPromise = fetchQuizzes();
-        const timeoutPromise = new Promise<Quiz[]>((resolve) =>
-          setTimeout(() => resolve(mockQuizzesStore), 2000)
-        );
-
-        const list = await Promise.race([fetchPromise, timeoutPromise]);
+        const list = await fetchQuizzes();
         setQuizzes(list);
-
-        // Fetch fresh quizzes in background if race was won by timeout
-        fetchPromise
-          .then((fresh) => {
-            if (fresh && fresh.length > 0) setQuizzes(fresh);
-          })
-          .catch(() => {});
 
         // 1. Restore Active Host Session on Refresh if authenticated
         const savedHostSession = localStorage.getItem(STORAGE_KEYS.ACTIVE_HOST_SESSION);
@@ -131,21 +117,16 @@ export const App: React.FC = () => {
           try {
             const parsed = JSON.parse(savedHostSession);
             if (parsed && parsed.pin) {
-              const sessionPromise = verifyGameSessionPin(parsed.pin);
-              const sessionTimeout = new Promise<null>((resolve) =>
-                setTimeout(() => resolve(null), 2500)
-              );
-              const validSession = await Promise.race([sessionPromise, sessionTimeout]);
-
+              const validSession = await verifyGameSessionPin(parsed.pin);
               if (validSession) {
                 setHostSession(validSession);
                 setHostCurrentQuestionIdx(parsed.questionIndex || 0);
                 setHostStep(parsed.step || "LOBBY");
 
-                fetchSessionParticipants(validSession.id)
-                  .then((parts) => setHostParticipants(parts))
-                  .catch(() => {});
+                const parts = await fetchSessionParticipants(validSession.id);
+                setHostParticipants(parts);
 
+                // Auto switch to host mode on refresh if host was active
                 if (localStorage.getItem(STORAGE_KEYS.HOST_AUTH) === "true") {
                   setActiveMode("host");
                 }
@@ -162,12 +143,7 @@ export const App: React.FC = () => {
           try {
             const parsed = JSON.parse(savedPlayerSession);
             if (parsed && parsed.pin && parsed.participantName) {
-              const sessionPromise = verifyGameSessionPin(parsed.pin);
-              const sessionTimeout = new Promise<null>((resolve) =>
-                setTimeout(() => resolve(null), 2500)
-              );
-              const validSession = await Promise.race([sessionPromise, sessionTimeout]);
-
+              const validSession = await verifyGameSessionPin(parsed.pin);
               if (validSession) {
                 setPlayerPin(parsed.pin);
                 setParticipantName(parsed.participantName);
@@ -177,9 +153,8 @@ export const App: React.FC = () => {
                 setPlayerQuestionIdx(validSession.current_question_index || 0);
                 setPlayerStep(parsed.step || "WAITING");
 
-                fetchSessionParticipants(validSession.id)
-                  .then((parts) => setPlayerRoomParticipants(parts))
-                  .catch(() => {});
+                const parts = await fetchSessionParticipants(validSession.id);
+                setPlayerRoomParticipants(parts);
               }
             }
           } catch {

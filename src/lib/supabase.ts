@@ -215,7 +215,7 @@ const MOCK_QUIZZES: Quiz[] = [
 
 const avatarsList = ['🦊', '🦄', '🐯', '🐼', '🦁', '🐱', '🐉', '🦉', '🚀', '🤖', '👾', '👑'];
 
-export let mockQuizzesStore = [...MOCK_QUIZZES];
+let mockQuizzesStore = [...MOCK_QUIZZES];
 let mockParticipantsStore: Record<string, Participant[]> = {
   'quiz-agri-1': INITIAL_PARTICIPANT_NAMES.map((name, idx) => ({
     id: `p-quiz-agri-${idx}`,
@@ -415,40 +415,34 @@ export async function addParticipantToQuiz(quizId: string, name: string, avatar:
 export async function fetchQuizzes(): Promise<Quiz[]> {
   if (isSupabaseConfigured && supabase) {
     try {
-      // Fetch quizzes and all questions in ONE parallel batch query to eliminate N+1 delays
-      const [{ data: quizzesData, error: qErr }, { data: allQuestionsData }] = await Promise.all([
-        supabase.from('quizzes').select('*, questions(*)'),
-        supabase.from('questions').select('*'),
-      ]);
-
-      if (!qErr && quizzesData && quizzesData.length > 0) {
-        const questionsByQuizId: Record<string, any[]> = {};
-        (allQuestionsData || []).forEach((q) => {
-          if (q.quiz_id) {
-            if (!questionsByQuizId[q.quiz_id]) questionsByQuizId[q.quiz_id] = [];
-            questionsByQuizId[q.quiz_id].push(q);
-          }
-        });
-
-        const quizList: Quiz[] = quizzesData.map((q) => {
-          let qList = (q.questions && q.questions.length > 0) ? q.questions : (questionsByQuizId[q.id] || []);
-
+      const { data, error } = await supabase
+        .from('quizzes')
+        .select('*, questions(*)');
+      if (!error && data && data.length > 0) {
+        const quizList: Quiz[] = [];
+        for (const q of data) {
+          let qList = q.questions || [];
           if (!qList || qList.length === 0) {
-            const matchedMock = mockQuizzesStore.find(
-              (mq) => mq.id === q.id || mq.code === q.code || mq.title === q.title
-            );
+            const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', q.id);
+            if (qData && qData.length > 0) {
+              qList = qData;
+            }
+          }
+
+          // If still empty, check mockQuizzesStore by code or title
+          if (!qList || qList.length === 0) {
+            const matchedMock = mockQuizzesStore.find((mq) => mq.id === q.id || mq.code === q.code || mq.title === q.title);
             if (matchedMock && matchedMock.questions.length > 0) {
               qList = matchedMock.questions;
             }
           }
 
-          return {
+          quizList.push({
             ...q,
             questions: qList,
             allowed_participants: q.allowed_participants || [],
-          };
-        });
-
+          });
+        }
         return quizList;
       }
     } catch {
