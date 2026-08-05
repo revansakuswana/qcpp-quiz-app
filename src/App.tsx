@@ -616,7 +616,11 @@ export const App: React.FC = () => {
     );
   }
 
-  const currentActiveQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
+  const currentActiveQuiz =
+    (playerQuiz && playerQuiz.questions && playerQuiz.questions.length > 0 ? playerQuiz : null) ||
+    (hostSession && hostSession.quiz && hostSession.quiz.questions && hostSession.quiz.questions.length > 0 ? hostSession.quiz : null) ||
+    quizzes.find((q) => q.questions && q.questions.length > 0) ||
+    quizzes[0];
 
   return (
     <div className="min-h-screen flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
@@ -654,14 +658,15 @@ export const App: React.FC = () => {
               />
             )}
 
-            {playerStep === "QUESTION" && currentActiveQuiz && currentActiveQuiz.questions && (
+            {playerStep === "QUESTION" && currentActiveQuiz && (
               <PlayerQuestion
                 question={
-                  currentActiveQuiz.questions[playerQuestionIdx] ||
-                  currentActiveQuiz.questions[0]
+                  (currentActiveQuiz.questions && currentActiveQuiz.questions[playerQuestionIdx]) ||
+                  (currentActiveQuiz.questions && currentActiveQuiz.questions[0]) ||
+                  quizzes[0].questions[0]
                 }
                 questionIndex={playerQuestionIdx}
-                totalQuestions={(currentActiveQuiz.questions || []).length}
+                totalQuestions={(currentActiveQuiz.questions || quizzes[0].questions).length}
                 forceTimeUp={playerForceTimeUp}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
                 selectedAnswerIndex={selectedAnswerIdx}

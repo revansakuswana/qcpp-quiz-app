@@ -655,33 +655,45 @@ export async function updateGameSessionState(
   questionStartedAt?: number
 ): Promise<boolean> {
   const now = questionStartedAt || Date.now();
-  const session = mockSessionsStore[sessionId];
-  if (session) {
-    session.status = status;
-    session.current_question_index = questionIndex;
-    session.question_started_at = now;
-  }
+  const realSessionId = await resolveRealSessionUUID(sessionId);
+  const keysToSync = Array.from(new Set([realSessionId, sessionId]));
+
+  keysToSync.forEach((key) => {
+    const session = mockSessionsStore[key];
+    if (session) {
+      session.status = status;
+      session.current_question_index = questionIndex;
+      session.question_started_at = now;
+    }
+  });
 
   if (isSupabaseConfigured && supabase) {
     try {
-      await supabase
-        .from('game_sessions')
-        .update({
-          status,
-          current_question_index: questionIndex,
-          updated_at: new Date(now).toISOString(),
-        })
-        .eq('id', sessionId);
-    } catch {
-      // ignore
+      const isPin = sessionId.length === 6 && /^\d+$/.test(sessionId);
+      let query = supabase.from('game_sessions').update({
+        status,
+        current_question_index: questionIndex,
+        updated_at: new Date(now).toISOString(),
+      });
+
+      if (isPin) {
+        query = query.eq('pin', sessionId);
+      } else {
+        query = query.eq('id', realSessionId);
+      }
+      await query;
+    } catch (err) {
+      console.warn('Supabase update session status error:', err);
     }
   }
 
-  notifyMockListeners(`session:${sessionId}`, {
-    type: 'SESSION_UPDATED',
-    status,
-    questionIndex,
-    questionStartedAt: now,
+  keysToSync.forEach((key) => {
+    notifyMockListeners(`session:${key}`, {
+      type: 'SESSION_UPDATED',
+      status,
+      questionIndex,
+      questionStartedAt: now,
+    });
   });
 
   return true;
@@ -1127,18 +1139,23 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
 // -------------------------------------------------------------
 // REALTIME SUBSCRIPTION SYSTEM
 // -------------------------------------------------------------
-export function subscribeToSession(sessionId: string, callback: (event: any) => void) {
-  if (!mockBroadcasters[sessionId]) {
-    mockBroadcasters[sessionId] = new Set();
-  }
-  mockBroadcasters[sessionId].add(callback);
+export async function subscribeToSession(sessionIdOrPin: string, callback: (event: any) => void) {
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
+  const keys = Array.from(new Set([realSessionId, sessionIdOrPin]));
+
+  keys.forEach((key) => {
+    if (!mockBroadcasters[key]) {
+      mockBroadcasters[key] = new Set();
+    }
+    mockBroadcasters[key].add(callback);
+  });
 
   if (isSupabaseConfigured && supabase) {
     const channel = supabase
-      .channel(`game_session:${sessionId}`)
+      .channel(`game_session:${realSessionId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+        { event: '*', schema: 'public', table: 'game_sessions', filter: `id=eq.${realSessionId}` },
         (payload) => {
           callback({
             type: 'SESSION_UPDATED',
@@ -1149,9 +1166,9 @@ export function subscribeToSession(sessionId: string, callback: (event: any) => 
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${sessionId}` },
+        { event: '*', schema: 'public', table: 'session_participants', filter: `session_id=eq.${realSessionId}` },
         async () => {
-          const parts = await fetchSessionParticipants(sessionId);
+          const parts = await fetchSessionParticipants(realSessionId);
           callback({
             type: 'PLAYER_JOINED',
             participants: parts,
@@ -1160,7 +1177,7 @@ export function subscribeToSession(sessionId: string, callback: (event: any) => 
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'player_answers', filter: `session_id=eq.${sessionId}` },
+        { event: '*', schema: 'public', table: 'player_answers', filter: `session_id=eq.${realSessionId}` },
         (payload) => {
           callback({
             type: 'ANSWER_SUBMITTED',
@@ -1172,16 +1189,20 @@ export function subscribeToSession(sessionId: string, callback: (event: any) => 
 
     return () => {
       supabase.removeChannel(channel);
-      if (mockBroadcasters[sessionId]) {
-        mockBroadcasters[sessionId].delete(callback);
-      }
+      keys.forEach((key) => {
+        if (mockBroadcasters[key]) {
+          mockBroadcasters[key].delete(callback);
+        }
+      });
     };
   }
 
   return () => {
-    if (mockBroadcasters[sessionId]) {
-      mockBroadcasters[sessionId].delete(callback);
-    }
+    keys.forEach((key) => {
+      if (mockBroadcasters[key]) {
+        mockBroadcasters[key].delete(callback);
+      }
+    });
   };
 }
 
