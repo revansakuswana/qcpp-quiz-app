@@ -231,7 +231,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                   </span>
                   {editingQuizId === q.id && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-qcpp-yellow text-black animate-pulse font-mono">
-                      Sedang Di-Edit ✏️
+                      Sedang Di-Edit
                     </span>
                   )}
                 </div>
@@ -243,7 +243,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
                 {q.allowed_participants && q.allowed_participants.length > 0 && (
                   <div className="mt-2.5 pt-2 border-t border-white/10">
                     <span className="text-[10px] font-bold text-purple-300 block mb-1">
-                      👥 Peserta ({q.allowed_participants.length}):
+                      Peserta ({q.allowed_participants.length}):
                     </span>
                     <div className="flex flex-wrap gap-1">
                       {q.allowed_participants.slice(0, 3).map((pName, i) => (
@@ -319,7 +319,7 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white rounded-xl border border-white/20 text-xs font-bold transition-all flex items-center space-x-1.5"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Batal Edit</span>
+              <span>Batal</span>
             </button>
           )}
         </div>

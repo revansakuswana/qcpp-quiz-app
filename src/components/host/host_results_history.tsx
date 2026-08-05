@@ -1,15 +1,32 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, Users, Search, Download, Calendar, Medal, Eye, X, CheckCircle2, FileSpreadsheet, Check } from 'lucide-react';
-import { CompletedSessionResult, SessionParticipant } from '../../types/quiz';
-import { fetchCompletedSessionResults } from '../../lib/supabase';
-import { soundFx } from '../../lib/audio';
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  Trophy,
+  Users,
+  Search,
+  Download,
+  Calendar,
+  Medal,
+  Eye,
+  X,
+  CheckCircle2,
+  FileSpreadsheet,
+  Trash2,
+  AlertTriangle,
+} from "lucide-react";
+import { CompletedSessionResult, SessionParticipant } from "../../types/quiz";
+import { fetchCompletedSessionResults, deleteCompletedSessionResult } from "../../lib/supabase";
+import { soundFx } from "../../lib/audio";
 
 export const HostResultsHistory: React.FC = () => {
   const [results, setResults] = useState<CompletedSessionResult[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedSession, setSelectedSession] = useState<CompletedSessionResult | null>(null);
-  const [modalSearch, setModalSearch] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedSession, setSelectedSession] =
+    useState<CompletedSessionResult | null>(null);
+  const [modalSearch, setModalSearch] = useState<string>("");
+  const [confirmDeleteSession, setConfirmDeleteSession] =
+    useState<CompletedSessionResult | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,18 +63,32 @@ export const HostResultsHistory: React.FC = () => {
       (r) =>
         r.quiz_title.toLowerCase().includes(q) ||
         r.quiz_code.toLowerCase().includes(q) ||
-        r.pin.toLowerCase().includes(q)
+        r.pin.toLowerCase().includes(q),
     );
   }, [results, searchQuery]);
 
   // Overall Statistics
   const totalSessions = results.length;
   const totalParticipantsCount = useMemo(() => {
-    return results.reduce((acc, curr) => acc + (curr.participants?.length || curr.total_participants || 0), 0);
+    return results.reduce(
+      (acc, curr) =>
+        acc + (curr.participants?.length || curr.total_participants || 0),
+      0,
+    );
   }, [results]);
 
-  const topScorerOverall = useMemo<{ name: string; score: number; quiz: string; avatar: string } | null>(() => {
-    let top: { name: string; score: number; quiz: string; avatar: string } | null = null;
+  const topScorerOverall = useMemo<{
+    name: string;
+    score: number;
+    quiz: string;
+    avatar: string;
+  } | null>(() => {
+    let top: {
+      name: string;
+      score: number;
+      quiz: string;
+      avatar: string;
+    } | null = null;
     results.forEach((r) => {
       if (r.participants && r.participants.length > 0) {
         const first = r.participants[0];
@@ -66,7 +97,7 @@ export const HostResultsHistory: React.FC = () => {
             name: first.participant_name,
             score: first.score,
             quiz: r.quiz_title,
-            avatar: first.avatar || '🏆',
+            avatar: first.avatar || "🏆",
           };
         }
       }
@@ -74,12 +105,43 @@ export const HostResultsHistory: React.FC = () => {
     return top;
   }, [results]);
 
+  const handleDeleteSession = async () => {
+    if (!confirmDeleteSession) return;
+    soundFx.playClick();
+    setIsDeleting(true);
+    const targetId = confirmDeleteSession.id;
+    await deleteCompletedSessionResult(targetId);
+
+    setResults((prev) => prev.filter((r) => r.id !== targetId));
+    if (selectedSession?.id === targetId) {
+      setSelectedSession(null);
+    }
+    setIsDeleting(false);
+    setConfirmDeleteSession(null);
+  };
+
   // Function to Export CSV Data
   const handleExportCSV = (session: CompletedSessionResult) => {
     soundFx.playClick();
-    const headers = ['Peringkat', 'Nama Peserta', 'Jawaban Benar', 'Total Soal', 'Skor Akhir (PTS)', 'Streak', 'PIN Room', 'Judul Kuis'];
+    const headers = [
+      "Peringkat",
+      "Nama Peserta",
+      "Jawaban Benar",
+      "Total Soal",
+      "Skor Akhir (PTS)",
+      "Streak",
+      "PIN Room",
+      "Judul Kuis",
+    ];
     const rows = (session.participants || []).map((p, idx) => {
-      const correct = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), session.total_questions);
+      const correct =
+        p.correct_answers_count ??
+        (p.score > 0
+          ? Math.max(
+              1,
+              Math.min(Math.floor(p.score / 500), session.total_questions),
+            )
+          : 0);
       return [
         idx + 1,
         `"${p.participant_name.replace(/"/g, '""')}"`,
@@ -92,11 +154,16 @@ export const HostResultsHistory: React.FC = () => {
       ];
     });
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" +
+      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
     const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Hasil_Quiz_${session.quiz_code}_PIN_${session.pin}.csv`);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `Hasil_Quiz_${session.quiz_code}_PIN_${session.pin}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -106,7 +173,9 @@ export const HostResultsHistory: React.FC = () => {
   const modalFilteredParticipants = useMemo(() => {
     if (!selectedSession) return [];
     const q = modalSearch.toLowerCase().trim();
-    const sorted = [...(selectedSession.participants || [])].sort((a, b) => b.score - a.score);
+    const sorted = [...(selectedSession.participants || [])].sort(
+      (a, b) => b.score - a.score,
+    );
     if (!q) return sorted;
     return sorted.filter((p) => p.participant_name.toLowerCase().includes(q));
   }, [selectedSession, modalSearch]);
@@ -117,13 +186,13 @@ export const HostResultsHistory: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-xl">
         <div>
           <div className="flex items-center space-x-2">
-            <Trophy className="w-6 h-6 text-qcpp-yellow shrink-0" />
             <h1 className="text-xl sm:text-2xl font-black font-['Fredoka',sans-serif] text-white">
               Daftar Hasil & Rekap Quiz
             </h1>
           </div>
           <p className="text-xs text-purple-200 mt-1">
-            Riwayat lengkap skor, jumlah jawaban benar, peringkat peserta, dan analisis hasil kuis yang telah selesai diselenggarakan.
+            Riwayat lengkap skor, jumlah jawaban benar, peringkat peserta, dan
+            analisis hasil kuis yang telah selesai diselenggarakan.
           </p>
         </div>
 
@@ -147,8 +216,12 @@ export const HostResultsHistory: React.FC = () => {
             📊
           </div>
           <div>
-            <p className="text-[11px] font-bold uppercase text-purple-200">Total Kuis Selesai</p>
-            <p className="text-xl font-black text-white">{totalSessions} Session</p>
+            <p className="text-[11px] font-bold uppercase text-purple-200">
+              Total Kuis Selesai
+            </p>
+            <p className="text-xl font-black text-white">
+              {totalSessions} Session
+            </p>
           </div>
         </div>
 
@@ -157,8 +230,12 @@ export const HostResultsHistory: React.FC = () => {
             👥
           </div>
           <div>
-            <p className="text-[11px] font-bold uppercase text-purple-200">Total Partisipasi Peserta</p>
-            <p className="text-xl font-black text-emerald-300">{totalParticipantsCount} Peserta</p>
+            <p className="text-[11px] font-bold uppercase text-purple-200">
+              Total Partisipasi Peserta
+            </p>
+            <p className="text-xl font-black text-emerald-300">
+              {totalParticipantsCount} Peserta
+            </p>
           </div>
         </div>
 
@@ -167,9 +244,13 @@ export const HostResultsHistory: React.FC = () => {
             🥇
           </div>
           <div className="truncate">
-            <p className="text-[11px] font-bold uppercase text-purple-200">Skor Tertinggi Overall</p>
+            <p className="text-[11px] font-bold uppercase text-purple-200">
+              Skor Tertinggi Overall
+            </p>
             <p className="text-sm font-bold text-qcpp-yellow truncate">
-              {topScorerOverall ? `${topScorerOverall.name} (${topScorerOverall.score.toLocaleString()} pts)` : 'Belum Ada'}
+              {topScorerOverall
+                ? `${topScorerOverall.name} (${topScorerOverall.score.toLocaleString()} pts)`
+                : "Belum Ada"}
             </p>
           </div>
         </div>
@@ -193,20 +274,19 @@ export const HostResultsHistory: React.FC = () => {
           filteredResults.map((session) => {
             const top3 = (session.participants || []).slice(0, 3);
             const dateStr = session.created_at
-              ? new Date(session.created_at).toLocaleDateString('id-ID', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
+              ? new Date(session.created_at).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
                 })
-              : 'Baru saja';
+              : "Baru saja";
 
             return (
               <div
                 key={session.id}
-                className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-4 hover:border-purple-400/50 transition-all"
-              >
+                className="bg-[#240a5e] border border-white/20 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-xl space-y-4 hover:border-purple-400/50 transition-all">
                 {/* Session Card Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
                   <div>
@@ -218,9 +298,13 @@ export const HostResultsHistory: React.FC = () => {
                         <CheckCircle2 className="w-3 h-3" />
                         <span>SELESAI</span>
                       </span>
-                      <span className="text-xs text-purple-300 font-mono">PIN: #{session.pin}</span>
+                      <span className="text-xs text-purple-300 font-mono">
+                        PIN: #{session.pin}
+                      </span>
                     </div>
-                    <h3 className="text-base sm:text-xl font-bold text-white mt-1">{session.quiz_title}</h3>
+                    <h3 className="text-base sm:text-xl font-bold text-white mt-1">
+                      {session.quiz_title}
+                    </h3>
                   </div>
 
                   <div className="flex items-center space-x-3 text-xs text-purple-200">
@@ -230,7 +314,11 @@ export const HostResultsHistory: React.FC = () => {
                     </span>
                     <span className="flex items-center space-x-1 font-bold text-white">
                       <Users className="w-3.5 h-3.5 text-qcpp-yellow" />
-                      <span>{session.participants?.length || session.total_participants} Peserta</span>
+                      <span>
+                        {session.participants?.length ||
+                          session.total_participants}{" "}
+                        Peserta
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -244,31 +332,49 @@ export const HostResultsHistory: React.FC = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     {top3.map((p, idx) => {
-                      const correctCount = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), session.total_questions);
+                      const correctCount =
+                        p.correct_answers_count ??
+                        (p.score > 0
+                          ? Math.max(
+                              1,
+                              Math.min(
+                                Math.floor(p.score / 500),
+                                session.total_questions,
+                              ),
+                            )
+                          : 0);
                       return (
                         <div
                           key={p.id || idx}
                           className={`p-3 rounded-xl border flex items-center justify-between ${
                             idx === 0
-                              ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
+                              ? "bg-amber-500/20 border-amber-400/40 text-amber-200"
                               : idx === 1
-                              ? 'bg-slate-400/20 border-slate-300/40 text-slate-200'
-                              : 'bg-amber-700/20 border-amber-600/40 text-amber-300'
-                          }`}
-                        >
+                                ? "bg-slate-400/20 border-slate-300/40 text-slate-200"
+                                : "bg-amber-700/20 border-amber-600/40 text-amber-300"
+                          }`}>
                           <div className="flex items-center space-x-2 truncate">
-                            <span className="text-lg">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}</span>
-                            <span className="text-base">{p.avatar || '🚀'}</span>
+                            <span className="text-lg">
+                              {idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"}
+                            </span>
+                            <span className="text-base">
+                              {p.avatar || "🚀"}
+                            </span>
                             <div className="truncate">
-                              <p className="text-xs font-bold text-white truncate">{p.participant_name}</p>
+                              <p className="text-xs font-bold text-white truncate">
+                                {p.participant_name}
+                              </p>
                               <div className="flex items-center space-x-1.5 mt-0.5">
                                 <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-300 border border-emerald-400/30">
-                                  {correctCount}/{session.total_questions} Benar ✅
+                                  {correctCount}/{session.total_questions} Benar
+                                  ✅
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <span className="text-xs font-black font-mono ml-2 shrink-0">{p.score.toLocaleString()} pts</span>
+                          <span className="text-xs font-black font-mono ml-2 shrink-0">
+                            {p.score.toLocaleString()} pts
+                          </span>
                         </div>
                       );
                     })}
@@ -288,21 +394,33 @@ export const HostResultsHistory: React.FC = () => {
                     onClick={() => {
                       soundFx.playClick();
                       setSelectedSession(session);
-                      setModalSearch('');
+                      setModalSearch("");
                     }}
-                    className="w-full sm:w-auto px-4 py-2 bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-xs rounded-xl border border-purple-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md"
-                  >
+                    className="w-full sm:w-auto px-4 py-2 bg-purple-600/80 hover:bg-purple-600 text-white font-bold text-xs rounded-xl border border-purple-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md">
                     <Eye className="w-4 h-4 text-qcpp-yellow" />
-                    <span>Lihat Rekap Lengkap ({session.participants?.length || 0} Peserta)</span>
+                    <span>
+                      Lihat Rekap Lengkap ({session.participants?.length || 0}{" "}
+                      Peserta)
+                    </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleExportCSV(session)}
-                    className="w-full sm:w-auto px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl border border-emerald-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md"
-                  >
+                    className="w-full sm:w-auto px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl border border-emerald-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md">
                     <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
                     <span>Export Data (CSV)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playClick();
+                      setConfirmDeleteSession(session);
+                    }}
+                    className="w-full sm:w-auto px-3.5 py-2 bg-rose-600/80 hover:bg-rose-600 text-white font-bold text-xs rounded-xl border border-rose-400/40 transition-all flex items-center justify-center space-x-1.5 active:scale-95 shadow-md">
+                    <Trash2 className="w-4 h-4 text-rose-200" />
+                    <span>Hapus</span>
                   </button>
                 </div>
               </div>
@@ -318,8 +436,7 @@ export const HostResultsHistory: React.FC = () => {
             {/* Close Button */}
             <button
               onClick={() => setSelectedSession(null)}
-              className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-rose-500/30 text-purple-200 hover:text-white border border-white/20 transition-all"
-            >
+              className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-rose-500/30 text-purple-200 hover:text-white border border-white/20 transition-all">
               <X className="w-5 h-5" />
             </button>
 
@@ -332,7 +449,8 @@ export const HostResultsHistory: React.FC = () => {
                 {selectedSession.quiz_title}
               </h2>
               <p className="text-xs text-purple-200 mt-1">
-                Rekap peringkat akhir dan jumlah jawaban benar dari total {selectedSession.total_questions} soal untuk sesi ini.
+                Rekap peringkat akhir dan jumlah jawaban benar dari total{" "}
+                {selectedSession.total_questions} soal untuk sesi ini.
               </p>
             </div>
 
@@ -362,37 +480,61 @@ export const HostResultsHistory: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {modalFilteredParticipants.map((p, idx) => {
-                    const correctCount = p.correct_answers_count ?? Math.min(Math.floor(p.score / 950), selectedSession.total_questions);
-                    const percentage = Math.round((correctCount / selectedSession.total_questions) * 100);
+                    const correctCount =
+                      p.correct_answers_count ??
+                      (p.score > 0
+                        ? Math.max(
+                            1,
+                            Math.min(
+                              Math.floor(p.score / 500),
+                              selectedSession.total_questions,
+                            ),
+                          )
+                        : 0);
+                    const percentage = Math.round(
+                      (correctCount / selectedSession.total_questions) * 100,
+                    );
 
                     return (
                       <tr
                         key={p.id || idx}
                         className={`hover:bg-white/10 transition-colors ${
                           idx === 0
-                            ? 'bg-amber-500/10 font-bold text-amber-200'
+                            ? "bg-amber-500/10 font-bold text-amber-200"
                             : idx === 1
-                            ? 'bg-slate-400/10 font-bold text-slate-200'
-                            : idx === 2
-                            ? 'bg-amber-700/10 font-bold text-amber-300'
-                            : 'text-purple-100'
-                        }`}
-                      >
+                              ? "bg-slate-400/10 font-bold text-slate-200"
+                              : idx === 2
+                                ? "bg-amber-700/10 font-bold text-amber-300"
+                                : "text-purple-100"
+                        }`}>
                         <td className="py-3 px-4 font-mono font-bold">
-                          {idx === 0 ? '🥇 #1' : idx === 1 ? '🥈 #2' : idx === 2 ? '🥉 #3' : `#${idx + 1}`}
+                          {idx === 0
+                            ? "🥇 #1"
+                            : idx === 1
+                              ? "🥈 #2"
+                              : idx === 2
+                                ? "🥉 #3"
+                                : `#${idx + 1}`}
                         </td>
                         <td className="py-3 px-4 flex items-center space-x-2">
-                          <span className="text-base">{p.avatar || '🚀'}</span>
-                          <span className="font-bold text-white">{p.participant_name}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center font-mono">
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-bold">
-                            <span>{correctCount} / {selectedSession.total_questions} Benar</span>
-                            <span className="text-[10px] opacity-80">({percentage}%)</span>
+                          <span className="text-base">{p.avatar || "🚀"}</span>
+                          <span className="font-bold text-white">
+                            {p.participant_name}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center font-mono">
-                          {p.streak && p.streak > 0 ? `🔥 ${p.streak}` : '-'}
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 font-bold">
+                            <span>
+                              {correctCount} / {selectedSession.total_questions}{" "}
+                              Benar
+                            </span>
+                            <span className="text-[10px] opacity-80">
+                              ({percentage}%)
+                            </span>
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono">
+                          {p.streak && p.streak > 0 ? `🔥 ${p.streak}` : "-"}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-extrabold text-qcpp-yellow text-sm">
                           {p.score.toLocaleString()} pts
@@ -402,7 +544,9 @@ export const HostResultsHistory: React.FC = () => {
                   })}
                   {modalFilteredParticipants.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-xs text-purple-300">
+                      <td
+                        colSpan={5}
+                        className="py-6 text-center text-xs text-purple-300">
                         Tidak ada data peserta yang cocok.
                       </td>
                     </tr>
@@ -414,16 +558,62 @@ export const HostResultsHistory: React.FC = () => {
             {/* Modal Bottom Actions */}
             <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
               <span className="text-xs text-purple-300 font-semibold">
-                Total {selectedSession.participants?.length || 0} Peserta Terdaftar
+                Total {selectedSession.participants?.length || 0} Peserta
+                Terdaftar
               </span>
 
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playClick();
+                    setConfirmDeleteSession(selectedSession);
+                  }}
+                  className="px-3.5 py-2 bg-rose-600/80 hover:bg-rose-600 text-white font-bold text-xs rounded-xl border border-rose-400/40 transition-all flex items-center space-x-1.5 active:scale-95 shadow-md">
+                  <Trash2 className="w-4 h-4 text-rose-200" />
+                  <span>Hapus Sesi</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportCSV(selectedSession)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg active:scale-95 transition-all flex items-center space-x-1.5">
+                  <Download className="w-4 h-4" />
+                  <span>Download File CSV</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE MODAL POPUP */}
+      {confirmDeleteSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#240a5e] border-2 border-rose-500/50 rounded-3xl p-6 shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-rose-500/20 border-2 border-rose-500/50 flex items-center justify-center mx-auto text-rose-400">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl font-extrabold text-white">Hapus Riwayat Kuis?</h3>
+            <p className="text-xs text-purple-200 leading-relaxed">
+              Apakah Anda yakin ingin menghapus riwayat sesi kuis{" "}
+              <strong className="text-white">{confirmDeleteSession.quiz_title}</strong> (PIN #{confirmDeleteSession.pin})? Data nilai dan peringkat peserta akan dihapus secara permanen dari database.
+            </p>
+            <div className="flex items-center justify-end space-x-3 pt-2">
               <button
                 type="button"
-                onClick={() => handleExportCSV(selectedSession)}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl shadow-lg active:scale-95 transition-all flex items-center space-x-1.5"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download File CSV</span>
+                disabled={isDeleting}
+                onClick={() => setConfirmDeleteSession(null)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-purple-200 text-xs font-bold rounded-xl border border-white/10 transition-all">
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteSession}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold rounded-xl border border-rose-400/40 shadow-lg transition-all flex items-center space-x-1.5">
+                <Trash2 className="w-4 h-4" />
+                <span>{isDeleting ? "Menghapus..." : "Ya, Hapus Permanen"}</span>
               </button>
             </div>
           </div>

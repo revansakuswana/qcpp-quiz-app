@@ -182,7 +182,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
             }}
             className="w-full py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-purple-200 hover:text-white text-xs sm:text-sm font-bold rounded-xl border border-white/10 transition-colors active:scale-95"
           >
-            Lewati Timer & Tampilkan Jawaban ({timeLeft}s) ⏭️
+            Lewati Timer & Tampilkan Jawaban ({timeLeft}s)
           </button>
         ) : (
           <button
@@ -195,12 +195,12 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
             {isLastQuestion ? (
               <>
                 <Award className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span>Lihat Hasil Akhir (Podium) 🏆</span>
+                <span>Lihat Hasil Akhir (Podium)</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
-                <span>Lanjut Ke Pertanyaan Berikutnya →</span>
+                <span>Lanjut Ke Pertanyaan Berikutnya</span>
               </>
             )}
           </button>

@@ -215,7 +215,7 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
           isCorrectAnswer ? (
             <div className="flex items-center justify-center space-x-2 text-emerald-300 font-extrabold text-sm sm:text-base">
               <Award className="w-5 h-5 text-emerald-400 animate-bounce" />
-              <span>🎉 HEBAT! JAWABAN KAMU BENAR! (+1000 POIN)</span>
+              <span>HEBAT! JAWABAN KAMU BENAR! (+1000 POIN)</span>
             </div>
           ) : isWrongAnswer ? (
             <div className="flex flex-col items-center space-y-1 text-rose-300 font-bold text-xs sm:text-sm">

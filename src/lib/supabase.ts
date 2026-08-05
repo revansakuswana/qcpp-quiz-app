@@ -758,17 +758,20 @@ async function resolveRealSessionUUID(input: string): Promise<string> {
     return clean;
   }
 
+  // Extract candidate 6-digit PIN if input is e.g. "sess-849201" or "849201"
+  const rawPin = clean.replace(/^sess-/, '').trim();
+  const candidatePin = /^\d{6}$/.test(rawPin) ? rawPin : null;
+
   // 2. Query Supabase DB first for game_sessions by PIN or ID
   if (isSupabaseConfigured && supabase) {
     try {
-      const isPin = clean.length === 6 && /^\d+$/.test(clean);
-      let query = supabase.from('game_sessions').select('id, pin');
-      if (isPin) {
-        query = query.eq('pin', clean);
+      let query = supabase.from('game_sessions').select('id, pin').order('created_at', { ascending: false });
+      if (candidatePin) {
+        query = query.eq('pin', candidatePin);
       } else {
-        query = query.eq('id', clean);
+        query = query.or(`id.eq.${clean},pin.eq.${clean}`);
       }
-      const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
+      const { data } = await query.limit(1).maybeSingle();
       if (data && data.id && uuidRegex.test(data.id)) {
         return data.id;
       }
@@ -779,7 +782,7 @@ async function resolveRealSessionUUID(input: string): Promise<string> {
 
   // 3. Fallback to local store if local store has a valid UUID
   const localSess = Object.values(mockSessionsStore).find(
-    (s) => s.id === clean || s.pin === clean
+    (s) => s.id === clean || s.pin === clean || (candidatePin && s.pin === candidatePin)
   );
   if (localSess && uuidRegex.test(localSess.id)) {
     return localSess.id;
@@ -835,13 +838,15 @@ export async function joinGameSession(
       let targetSessionId = realSessionId;
 
       if (!targetSessionId || !uuidRegex.test(targetSessionId)) {
-        const { data: sessData } = await supabase
-          .from('game_sessions')
-          .select('id')
-          .eq('pin', sessionIdOrPin.trim())
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const rawPin = sessionIdOrPin.replace(/^sess-/, '').trim();
+        const candidatePin = /^\d{6}$/.test(rawPin) ? rawPin : null;
+        let query = supabase.from('game_sessions').select('id').order('created_at', { ascending: false });
+        if (candidatePin) {
+          query = query.eq('pin', candidatePin);
+        } else {
+          query = query.or(`id.eq.${sessionIdOrPin.trim()},pin.eq.${sessionIdOrPin.trim()}`);
+        }
+        const { data: sessData } = await query.limit(1).maybeSingle();
 
         if (sessData && sessData.id) {
           targetSessionId = sessData.id;
@@ -942,30 +947,82 @@ export async function fetchSessionParticipants(sessionIdOrPin?: string, currentP
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('session_participants')
-        .select('*')
-        .eq('session_id', realSessionId)
-        .order('score', { ascending: false });
-      if (!error && data) {
-        participants = data as SessionParticipant[];
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const targetId = uuidRegex.test(realSessionId) ? realSessionId : null;
 
-        // Merge local memory store scores if higher (avoids transient 0 score overwrites)
-        const keysToTry = Array.from(new Set([realSessionId, sessionIdOrPin])).filter(Boolean);
-        keysToTry.forEach((key) => {
-          const localList = mockSessionParticipantsStore[key] || [];
-          participants.forEach((p) => {
-            const localP = localList.find(
-              (lp) => lp.participant_name.trim().toLowerCase() === p.participant_name.trim().toLowerCase()
-            );
-            if (localP && localP.score > (p.score || 0)) {
-              p.score = localP.score;
+      if (targetId) {
+        // 1. Fetch participants from session_participants table
+        const { data: pData } = await supabase
+          .from('session_participants')
+          .select('*')
+          .eq('session_id', targetId);
+
+        if (pData) {
+          participants = pData as SessionParticipant[];
+        }
+
+        // 2. Aggregate points_earned directly from player_answers for 100% accurate real-time scores
+        const { data: ansData } = await supabase
+          .from('player_answers')
+          .select('participant_name, points_earned, is_correct')
+          .eq('session_id', targetId);
+
+        if (ansData && ansData.length > 0) {
+          const scoresByName: Record<string, number> = {};
+          const correctByName: Record<string, number> = {};
+
+          ansData.forEach((ans) => {
+            const clean = (ans.participant_name || '').trim().toLowerCase();
+            if (clean) {
+              scoresByName[clean] = (scoresByName[clean] || 0) + (ans.points_earned || 0);
+              if (ans.is_correct) {
+                correctByName[clean] = (correctByName[clean] || 0) + 1;
+              }
             }
           });
-        });
+
+          // Sync exact score into fetched participants array & update DB if needed
+          participants.forEach((p) => {
+            const clean = (p.participant_name || '').trim().toLowerCase();
+            const ansScore = scoresByName[clean];
+            if (ansScore !== undefined && ansScore > (p.score || 0)) {
+              p.score = ansScore;
+              if (correctByName[clean] !== undefined) {
+                p.correct_answers_count = correctByName[clean];
+              }
+              supabase
+                .from('session_participants')
+                .update({ score: ansScore, correct_answers_count: p.correct_answers_count })
+                .eq('id', p.id)
+                .then();
+            }
+          });
+
+          // Include participants from player_answers if not yet in session_participants
+          Object.keys(scoresByName).forEach((cleanName) => {
+            const exists = participants.some(
+              (p) => (p.participant_name || '').trim().toLowerCase() === cleanName
+            );
+            if (!exists) {
+              const matchingAns = ansData.find(
+                (a) => (a.participant_name || '').trim().toLowerCase() === cleanName
+              );
+              const origName = matchingAns?.participant_name || cleanName;
+              participants.push({
+                id: `sp-ans-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                session_id: targetId,
+                participant_name: origName,
+                avatar: '🚀',
+                score: scoresByName[cleanName],
+                streak: 0,
+                correct_answers_count: correctByName[cleanName] || 0,
+              });
+            }
+          });
+        }
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('fetchSessionParticipants error:', err);
     }
   }
 
@@ -1055,13 +1112,15 @@ export async function submitPlayerAnswer(
       let targetSessionId = realSessionId;
 
       if (!targetSessionId || !uuidRegex.test(targetSessionId)) {
-        const { data: sessData } = await supabase
-          .from('game_sessions')
-          .select('id')
-          .eq('pin', sessionIdOrPin.trim())
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const rawPin = sessionIdOrPin.replace(/^sess-/, '').trim();
+        const candidatePin = /^\d{6}$/.test(rawPin) ? rawPin : null;
+        let query = supabase.from('game_sessions').select('id').order('created_at', { ascending: false });
+        if (candidatePin) {
+          query = query.eq('pin', candidatePin);
+        } else {
+          query = query.or(`id.eq.${sessionIdOrPin.trim()},pin.eq.${sessionIdOrPin.trim()}`);
+        }
+        const { data: sessData } = await query.limit(1).maybeSingle();
 
         if (sessData && sessData.id) {
           targetSessionId = sessData.id;
@@ -1278,18 +1337,68 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
       if (!error && sessionsData && sessionsData.length > 0) {
         const sessionIds = sessionsData.map((s) => s.id);
 
-        // Fetch all participants for all sessions in ONE parallel query!
-        const { data: allPartsData } = await supabase
-          .from('session_participants')
-          .select('*')
-          .in('session_id', sessionIds);
+        // Fetch session_participants AND player_answers in parallel queries for 100% accurate results!
+        const [{ data: allPartsData }, { data: allAnsData }] = await Promise.all([
+          supabase.from('session_participants').select('*').in('session_id', sessionIds),
+          supabase.from('player_answers').select('session_id, participant_name, points_earned, is_correct').in('session_id', sessionIds),
+        ]);
+
+        const ansScoresBySession: Record<string, Record<string, number>> = {};
+        const ansCorrectBySession: Record<string, Record<string, number>> = {};
+
+        (allAnsData || []).forEach((ans) => {
+          const sId = ans.session_id;
+          const clean = (ans.participant_name || '').trim().toLowerCase();
+          if (sId && clean) {
+            if (!ansScoresBySession[sId]) ansScoresBySession[sId] = {};
+            if (!ansCorrectBySession[sId]) ansCorrectBySession[sId] = {};
+
+            ansScoresBySession[sId][clean] = (ansScoresBySession[sId][clean] || 0) + (ans.points_earned || 0);
+            if (ans.is_correct) {
+              ansCorrectBySession[sId][clean] = (ansCorrectBySession[sId][clean] || 0) + 1;
+            }
+          }
+        });
 
         const partsBySessionId: Record<string, SessionParticipant[]> = {};
         (allPartsData || []).forEach((p) => {
+          const clean = (p.participant_name || '').trim().toLowerCase();
+          const realScore = ansScoresBySession[p.session_id]?.[clean];
+          const realCorrect = ansCorrectBySession[p.session_id]?.[clean];
+
+          if (realScore !== undefined && realScore > (p.score || 0)) {
+            p.score = realScore;
+          }
+          if (realCorrect !== undefined) {
+            p.correct_answers_count = realCorrect;
+          }
+
           if (!partsBySessionId[p.session_id]) {
             partsBySessionId[p.session_id] = [];
           }
           partsBySessionId[p.session_id].push(p as SessionParticipant);
+        });
+
+        // Also check for participants in player_answers missing from session_participants
+        (allAnsData || []).forEach((ans) => {
+          const sId = ans.session_id;
+          const clean = (ans.participant_name || '').trim().toLowerCase();
+          if (sId && clean && partsBySessionId[sId]) {
+            const exists = partsBySessionId[sId].some(
+              (p) => (p.participant_name || '').trim().toLowerCase() === clean
+            );
+            if (!exists) {
+              partsBySessionId[sId].push({
+                id: `sp-ans-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                session_id: sId,
+                participant_name: ans.participant_name,
+                avatar: '🚀',
+                score: ansScoresBySession[sId][clean] || 0,
+                streak: 0,
+                correct_answers_count: ansCorrectBySession[sId][clean] || 0,
+              });
+            }
+          }
         });
 
         const freshResults: CompletedSessionResult[] = sessionsData.map((sess) => {
@@ -1374,6 +1483,56 @@ export async function fetchCompletedSessionResults(): Promise<CompletedSessionRe
       ],
     },
   ];
+}
+
+export async function deleteCompletedSessionResult(sessionId: string): Promise<boolean> {
+  const realSessionId = await resolveRealSessionUUID(sessionId);
+  const targetId = realSessionId || sessionId;
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(targetId)) {
+        await supabase.from('player_answers').delete().eq('session_id', targetId);
+        await supabase.from('session_participants').delete().eq('session_id', targetId);
+        await supabase.from('game_sessions').delete().eq('id', targetId);
+      }
+    } catch (err) {
+      console.warn('Supabase delete completed session error:', err);
+    }
+  }
+
+  // Clear memory stores
+  const sessionObj = Object.values(mockSessionsStore).find(
+    (s) => s.id === targetId || s.id === sessionId || s.pin === sessionId
+  );
+  const pin = sessionObj?.pin || sessionId;
+
+  delete mockSessionsStore[targetId];
+  delete mockSessionsStore[sessionId];
+  delete mockSessionsStore[pin];
+  delete mockSessionParticipantsStore[targetId];
+  delete mockSessionParticipantsStore[sessionId];
+  delete mockSessionParticipantsStore[pin];
+  delete mockPlayerAnswersStore[targetId];
+  delete mockPlayerAnswersStore[sessionId];
+  delete mockPlayerAnswersStore[pin];
+
+  // Update localStorage cache
+  try {
+    const raw = localStorage.getItem(COMPLETED_SESSIONS_CACHE_KEY);
+    if (raw) {
+      const currentList: CompletedSessionResult[] = JSON.parse(raw);
+      const filtered = currentList.filter(
+        (item) => item.id !== targetId && item.id !== sessionId && item.pin !== pin && item.pin !== sessionId
+      );
+      localStorage.setItem(COMPLETED_SESSIONS_CACHE_KEY, JSON.stringify(filtered));
+    }
+  } catch {
+    // ignore
+  }
+
+  return true;
 }
 
 // -------------------------------------------------------------

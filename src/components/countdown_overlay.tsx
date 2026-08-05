@@ -57,7 +57,7 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
         bg: 'from-emerald-500 to-teal-600',
         border: 'border-emerald-300',
         shadow: 'shadow-emerald-500/50',
-        text: 'GO! 🔥',
+        text: 'GO!',
         subtitle: 'Quiz Dimulai!',
       };
     }

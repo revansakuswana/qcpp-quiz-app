@@ -371,6 +371,10 @@ export const App: React.FC = () => {
 
       await updateSessionStatus(hostSession.id, "QUESTION", nextIdx, now);
     } else {
+      const finalParts = await fetchSessionParticipants(hostSession.id);
+      if (finalParts && finalParts.length > 0) {
+        setHostParticipants(finalParts);
+      }
       setHostStep("LEADERBOARD");
       localStorage.setItem(
         STORAGE_KEYS.ACTIVE_HOST_SESSION,
