@@ -472,7 +472,8 @@ export const QuizEditor: React.FC<QuizEditorProps> = ({
             disabled={saving}
             className="w-full py-3.5 sm:py-4 bg-gradient-to-r from-qcpp-purple to-purple-800 hover:from-purple-700 hover:to-qcpp-purple border-2 border-purple-400/50 text-white font-extrabold text-sm sm:text-lg rounded-xl sm:rounded-2xl shadow-xl shadow-purple-900/40 active:scale-95 transition-all flex items-center justify-center space-x-2"
           >
-            <span>{saving ? 'Menyimpan Kuis...' : editingQuizId ? 'Simpan Perubahan' : 'Simpan'}</span>
+            <Save className="w-4 h-4 sm:w-5 sm:h-5 text-qcpp-yellow" />
+            <span>{saving ? 'Menyimpan Kuis...' : 'Simpan Kuis (Tanpa Memulai) 💾'}</span>
           </button>
         </form>
       </div>
