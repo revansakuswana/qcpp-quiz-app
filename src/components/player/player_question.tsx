@@ -111,7 +111,12 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
     if (timeLeft <= 0 || forceTimeUp) return;
     soundFx.playClick();
     setLocalSelectedIdx(index);
-    const timeTaken = (Date.now() - startTime) / 1000;
+    let start = questionStartedAt || mountTimeRef.current;
+    const elapsedFromStart = (Date.now() - start) / 1000;
+    if (elapsedFromStart < 0 || elapsedFromStart >= timeLimit) {
+      start = mountTimeRef.current;
+    }
+    const timeTaken = Math.max(0, (Date.now() - start) / 1000);
     onSubmitAnswer(index, timeTaken);
   };
 

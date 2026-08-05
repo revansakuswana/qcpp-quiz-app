@@ -578,52 +578,88 @@ export async function updateQuiz(quizId: string, updatedData: Partial<Quiz>): Pr
   return updatedQuiz;
 }
 
+// Helper to ensure quiz is registered in Supabase and has a valid PostgreSQL UUID
+async function ensureQuizInSupabase(quizIdOrQuiz: string | Quiz): Promise<Quiz> {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let targetQuiz: Quiz | undefined =
+    typeof quizIdOrQuiz === 'string'
+      ? mockQuizzesStore.find((q) => q.id === quizIdOrQuiz || q.code === quizIdOrQuiz)
+      : quizIdOrQuiz;
+
+  if (!isSupabaseConfigured || !supabase) {
+    return targetQuiz || mockQuizzesStore[0];
+  }
+
+  try {
+    const searchId = typeof quizIdOrQuiz === 'string' ? quizIdOrQuiz : quizIdOrQuiz.id;
+
+    // 1. If searchId is a UUID, attempt direct fetch from Supabase
+    if (uuidRegex.test(searchId)) {
+      const { data } = await supabase.from('quizzes').select('*, questions(*)').eq('id', searchId).maybeSingle();
+      if (data) {
+        let questions = data.questions || [];
+        if (questions.length === 0) {
+          const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', data.id);
+          if (qData) questions = qData;
+        }
+        return {
+          ...data,
+          questions,
+          allowed_participants: data.allowed_participants || [],
+        };
+      }
+    }
+
+    // 2. Try matching by code in Supabase
+    const codeToSearch = targetQuiz?.code || (typeof quizIdOrQuiz === 'string' ? quizIdOrQuiz : '');
+    if (codeToSearch) {
+      const { data } = await supabase.from('quizzes').select('*, questions(*)').eq('code', codeToSearch).maybeSingle();
+      if (data) {
+        let questions = data.questions || [];
+        if (questions.length === 0) {
+          const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', data.id);
+          if (qData) questions = qData;
+        }
+        return {
+          ...data,
+          questions,
+          allowed_participants: data.allowed_participants || [],
+        };
+      }
+    }
+
+    // 3. If quiz does not exist in Supabase, create/seed it
+    if (targetQuiz) {
+      const created = await createQuiz({
+        title: targetQuiz.title,
+        description: targetQuiz.description,
+        code: targetQuiz.code,
+        allowed_participants: targetQuiz.allowed_participants || [],
+        questions: targetQuiz.questions || [],
+      });
+      return created;
+    }
+  } catch (err) {
+    console.warn('ensureQuizInSupabase warning:', err);
+  }
+
+  return targetQuiz || mockQuizzesStore[0];
+}
+
 // -------------------------------------------------------------
 // GAME SESSIONS (HOST)
 // -------------------------------------------------------------
 export async function createGameSession(quizId: string): Promise<GameSession> {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
-  let quiz = mockQuizzesStore.find((q) => q.id === quizId);
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { data } = await supabase.from('quizzes').select('*, questions(*)').eq('id', quizId).single();
-      if (data) {
-        let qList = data.questions || [];
-        if (!qList || qList.length === 0) {
-          const { data: qData } = await supabase.from('questions').select('*').eq('quiz_id', quizId);
-          if (qData && qData.length > 0) qList = qData;
-        }
-        if (qList && qList.length > 0) {
-          quiz = {
-            ...data,
-            questions: qList,
-            allowed_participants: data.allowed_participants || [],
-          } as Quiz;
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!quiz) {
-    quiz = mockQuizzesStore.find((q) => q.id === quizId || q.code.includes('CROWN')) || mockQuizzesStore[0];
-  }
-
-  // Guarantee quiz has its exact questions
-  if (!quiz.questions || quiz.questions.length === 0) {
-    const matched = mockQuizzesStore.find((mq) => mq.id === quizId || mq.code === quiz?.code || mq.title === quiz?.title);
-    if (matched && matched.questions && matched.questions.length > 0) {
-      quiz.questions = matched.questions;
-    }
-  }
+  const dbQuiz = await ensureQuizInSupabase(quizId);
 
   const session: GameSession = {
     id: `sess-${Date.now()}`,
     pin,
-    quiz_id: quizId,
-    quiz,
+    quiz_id: dbQuiz.id,
+    quiz: dbQuiz,
     status: 'WAITING',
     current_question_index: 0,
     question_started_at: Date.now(),
@@ -631,20 +667,26 @@ export async function createGameSession(quizId: string): Promise<GameSession> {
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('game_sessions')
-        .insert([{ pin, quiz_id: quizId, status: 'WAITING', current_question_index: 0 }])
-        .select()
-        .single();
-      if (!error && data) {
-        session.id = data.id;
+      const validQuizId = uuidRegex.test(dbQuiz.id) ? dbQuiz.id : null;
+      if (validQuizId) {
+        const { data, error } = await supabase
+          .from('game_sessions')
+          .insert([{ pin, quiz_id: validQuizId, status: 'WAITING', current_question_index: 0 }])
+          .select()
+          .single();
+        if (!error && data) {
+          session.id = data.id;
+        } else if (error) {
+          console.warn('Supabase createGameSession insert error:', error);
+        }
       }
-    } catch {
-      // Fallback to local
+    } catch (err) {
+      console.warn('Supabase createGameSession error:', err);
     }
   }
 
   mockSessionsStore[session.id] = session;
+  mockSessionsStore[session.pin] = session;
   return session;
 }
 
@@ -709,16 +751,14 @@ export async function updateGameSessionState(
 async function resolveRealSessionUUID(input: string): Promise<string> {
   const clean = input.trim();
   if (!clean) return '';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  // 1. Check local mock store first
-  const localSess = Object.values(mockSessionsStore).find(
-    (s) => s.id === clean || s.pin === clean
-  );
-  if (localSess) {
-    return localSess.id;
+  // 1. If input is already a UUID, return it directly
+  if (uuidRegex.test(clean)) {
+    return clean;
   }
 
-  // 2. Query Supabase DB safely without throwing PostgreSQL UUID syntax errors
+  // 2. Query Supabase DB first for game_sessions by PIN or ID
   if (isSupabaseConfigured && supabase) {
     try {
       const isPin = clean.length === 6 && /^\d+$/.test(clean);
@@ -729,12 +769,20 @@ async function resolveRealSessionUUID(input: string): Promise<string> {
         query = query.eq('id', clean);
       }
       const { data } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
-      if (data && data.id) {
+      if (data && data.id && uuidRegex.test(data.id)) {
         return data.id;
       }
     } catch {
       // ignore
     }
+  }
+
+  // 3. Fallback to local store if local store has a valid UUID
+  const localSess = Object.values(mockSessionsStore).find(
+    (s) => s.id === clean || s.pin === clean
+  );
+  if (localSess && uuidRegex.test(localSess.id)) {
+    return localSess.id;
   }
 
   return clean;
@@ -783,30 +831,49 @@ export async function joinGameSession(
 
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data: existing } = await supabase
-        .from('session_participants')
-        .select('*')
-        .eq('session_id', realSessionId)
-        .eq('participant_name', cleanName)
-        .maybeSingle();
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let targetSessionId = realSessionId;
 
-      if (existing) {
-        await supabase
+      if (!targetSessionId || !uuidRegex.test(targetSessionId)) {
+        const { data: sessData } = await supabase
+          .from('game_sessions')
+          .select('id')
+          .eq('pin', sessionIdOrPin.trim())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (sessData && sessData.id) {
+          targetSessionId = sessData.id;
+        }
+      }
+
+      if (targetSessionId && uuidRegex.test(targetSessionId)) {
+        const { data: existing } = await supabase
           .from('session_participants')
-          .update({ avatar })
-          .eq('id', existing.id);
-      } else {
-        await supabase
-          .from('session_participants')
-          .insert([
-            {
-              session_id: realSessionId,
-              participant_name: cleanName,
-              avatar,
-              score: 0,
-              streak: 0,
-            },
-          ]);
+          .select('*')
+          .eq('session_id', targetSessionId)
+          .eq('participant_name', cleanName)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('session_participants')
+            .update({ avatar })
+            .eq('id', existing.id);
+        } else {
+          await supabase
+            .from('session_participants')
+            .insert([
+              {
+                session_id: targetSessionId,
+                participant_name: cleanName,
+                avatar,
+                score: 0,
+                streak: 0,
+              },
+            ]);
+        }
       }
     } catch (err) {
       console.warn('Supabase join error:', err);
@@ -878,9 +945,24 @@ export async function fetchSessionParticipants(sessionIdOrPin?: string, currentP
       const { data, error } = await supabase
         .from('session_participants')
         .select('*')
-        .eq('session_id', realSessionId);
+        .eq('session_id', realSessionId)
+        .order('score', { ascending: false });
       if (!error && data) {
         participants = data as SessionParticipant[];
+
+        // Merge local memory store scores if higher (avoids transient 0 score overwrites)
+        const keysToTry = Array.from(new Set([realSessionId, sessionIdOrPin])).filter(Boolean);
+        keysToTry.forEach((key) => {
+          const localList = mockSessionParticipantsStore[key] || [];
+          participants.forEach((p) => {
+            const localP = localList.find(
+              (lp) => lp.participant_name.trim().toLowerCase() === p.participant_name.trim().toLowerCase()
+            );
+            if (localP && localP.score > (p.score || 0)) {
+              p.score = localP.score;
+            }
+          });
+        });
       }
     } catch {
       // Fallback
@@ -890,6 +972,9 @@ export async function fetchSessionParticipants(sessionIdOrPin?: string, currentP
   if (participants.length === 0) {
     participants = mockSessionParticipantsStore[realSessionId] || mockSessionParticipantsStore[sessionIdOrPin] || [];
   }
+
+  // Ensure participants sorted by score descending
+  participants.sort((a, b) => b.score - a.score);
 
   // Sync both keys in memory
   mockSessionParticipantsStore[realSessionId] = participants;
@@ -949,7 +1034,7 @@ export async function submitPlayerAnswer(
   keysToSync.forEach((key) => {
     if (key && mockSessionParticipantsStore[key]) {
       const part = mockSessionParticipantsStore[key].find(
-        (p) => p.participant_name === participantName
+        (p) => p.participant_name.trim().toLowerCase() === participantName.trim().toLowerCase()
       );
       if (part) {
         part.score += pointsEarned;
@@ -985,17 +1070,26 @@ export async function submitPlayerAnswer(
 
       // Only attempt insert if we have a valid PostgreSQL UUID for session_id
       if (targetSessionId && uuidRegex.test(targetSessionId)) {
-        let validQuestionId = questionId;
+        let validQuestionId: string | null = questionId;
 
-        // If questionId is not a UUID, attempt to resolve a real UUID from DB
+        // If questionId is not a UUID, attempt to resolve the matching question UUID from DB
         if (!uuidRegex.test(validQuestionId)) {
-          const { data: qRows } = await supabase
-            .from('questions')
-            .select('id')
-            .limit(10);
-          if (qRows && qRows.length > 0) {
-            const found = qRows.find((q) => uuidRegex.test(q.id));
-            if (found) validQuestionId = found.id;
+          validQuestionId = null;
+          const { data: sessData } = await supabase
+            .from('game_sessions')
+            .select('quiz_id')
+            .eq('id', targetSessionId)
+            .maybeSingle();
+
+          if (sessData?.quiz_id) {
+            const { data: qRows } = await supabase
+              .from('questions')
+              .select('id')
+              .eq('quiz_id', sessData.quiz_id);
+            if (qRows && qRows.length > 0) {
+              const found = qRows.find((q) => uuidRegex.test(q.id));
+              if (found) validQuestionId = found.id;
+            }
           }
         }
 
@@ -1008,41 +1102,68 @@ export async function submitPlayerAnswer(
           time_taken: timeTaken,
         };
 
-        if (uuidRegex.test(validQuestionId)) {
+        if (validQuestionId && uuidRegex.test(validQuestionId)) {
           insertPayload.question_id = validQuestionId;
-        } else {
-          insertPayload.question_id = questionId;
         }
 
         const { error: insErr } = await supabase.from('player_answers').insert([insertPayload]);
         if (insErr) {
-          console.warn('Supabase player_answers insert primary attempt notice:', insErr);
-          // Retry without question_id if FK or UUID constraint failed
-          delete insertPayload.question_id;
-          await supabase.from('player_answers').insert([insertPayload]);
+          console.warn('Supabase player_answers insert notice:', insErr);
+          if (insertPayload.question_id) {
+            delete insertPayload.question_id;
+            const { error: retryErr } = await supabase.from('player_answers').insert([insertPayload]);
+            if (retryErr) {
+              console.error('Supabase player_answers retry insert error:', retryErr);
+            }
+          }
+        }
+
+        // Recalculate total score & correct count for participant across all player_answers
+        const cleanName = participantName.trim();
+        const { data: allUserAns } = await supabase
+          .from('player_answers')
+          .select('points_earned, is_correct')
+          .eq('session_id', targetSessionId)
+          .ilike('participant_name', cleanName);
+
+        let totalScore = pointsEarned;
+        let totalCorrect = isCorrect ? 1 : 0;
+
+        if (allUserAns && allUserAns.length > 0) {
+          totalScore = allUserAns.reduce((sum, a) => sum + (a.points_earned || 0), 0);
+          totalCorrect = allUserAns.filter((a) => a.is_correct).length;
         }
 
         const { data: pData } = await supabase
           .from('session_participants')
           .select('*')
           .eq('session_id', targetSessionId)
-          .eq('participant_name', participantName)
+          .ilike('participant_name', cleanName)
           .maybeSingle();
 
         if (pData) {
-          const newScore = (pData.score || 0) + pointsEarned;
           const newStreak = isCorrect ? (pData.streak || 0) + 1 : 0;
-          const newCorrectCount = isCorrect ? (pData.correct_answers_count || 0) + 1 : (pData.correct_answers_count || 0);
-
           await supabase
             .from('session_participants')
             .update({
-              score: newScore,
+              score: totalScore,
               streak: newStreak,
-              correct_answers_count: newCorrectCount,
+              correct_answers_count: totalCorrect,
             })
-            .eq('session_id', targetSessionId)
-            .eq('participant_name', participantName);
+            .eq('id', pData.id);
+        } else {
+          await supabase
+            .from('session_participants')
+            .insert([
+              {
+                session_id: targetSessionId,
+                participant_name: cleanName,
+                avatar: '🚀',
+                score: totalScore,
+                streak: isCorrect ? 1 : 0,
+                correct_answers_count: totalCorrect,
+              },
+            ]);
         }
       }
     } catch (err) {

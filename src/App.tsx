@@ -543,7 +543,7 @@ export const App: React.FC = () => {
       const updatedParts = await fetchSessionParticipants(liveSess.id, playerPin);
       if (updatedParts && updatedParts.length > 0) {
         setPlayerRoomParticipants(updatedParts);
-        const myStats = updatedParts.find((p) => p.participant_name === participantName);
+        const myStats = updatedParts.find((p) => p.participant_name.trim().toLowerCase() === participantName.trim().toLowerCase());
         if (myStats) {
           setLastResult((prev) =>
             prev ? { ...prev, totalScore: myStats.score, streak: myStats.streak } : prev
@@ -596,14 +596,14 @@ export const App: React.FC = () => {
 
       const updatedParts = await fetchSessionParticipants(activeSessId, playerPin);
       const myStats = updatedParts.find(
-        (p) => p.participant_name === participantName
+        (p) => p.participant_name.trim().toLowerCase() === participantName.trim().toLowerCase()
       );
 
       setLastResult({
         isCorrect,
         pointsEarned,
-        totalScore: myStats?.score || 0,
-        streak: myStats?.streak || 0,
+        totalScore: myStats?.score !== undefined && myStats.score > 0 ? myStats.score : pointsEarned,
+        streak: myStats?.streak !== undefined ? myStats.streak : (isCorrect ? 1 : 0),
         correctText: currentQ.options[currentQ.correct_option_index],
       });
     }
