@@ -250,21 +250,19 @@ function notifyMockListeners(channelKey: string, data: any) {
 // -------------------------------------------------------------
 export async function verifyGameSessionPin(pin: string): Promise<GameSession | null> {
   const cleanPin = pin.trim();
+  if (!cleanPin) return null;
 
-  // 1. Check local mock sessions store first
-  const localSess = Object.values(mockSessionsStore).find((s) => s.pin === cleanPin);
-  if (localSess) {
-    return localSess;
-  }
-
-  // 2. Check Supabase DB
+  // 1. Check Supabase DB first if configured to get live status changes (COUNTDOWN, QUESTION, etc.)
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase
-        .from('game_sessions')
-        .select('*, quiz:quizzes(*, questions(*))')
-        .eq('pin', cleanPin)
-        .single();
+      const isPin = cleanPin.length === 6 && /^\d+$/.test(cleanPin);
+      let query = supabase.from('game_sessions').select('*, quiz:quizzes(*, questions(*))');
+      if (isPin) {
+        query = query.eq('pin', cleanPin);
+      } else {
+        query = query.eq('id', cleanPin);
+      }
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
       if (!error && data) {
         let fullQuiz: Quiz | undefined = undefined;
@@ -317,8 +315,14 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
         return sess;
       }
     } catch {
-      // Fallback
+      // Fallback to local store
     }
+  }
+
+  // 2. Fallback to local mock sessions store
+  const localSess = Object.values(mockSessionsStore).find((s) => s.pin === cleanPin || s.id === cleanPin);
+  if (localSess) {
+    return localSess;
   }
 
   return null;

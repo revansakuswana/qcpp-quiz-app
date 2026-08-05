@@ -482,7 +482,7 @@ export const App: React.FC = () => {
     setHasAnsweredCurrent(false);
   };
 
-  // 1.5-Second Live Polling for Player Game Session Status (Game Start & Question Switch)
+  // 1-Second Live Polling for Player Game Session Status (Game Start & Question Switch)
   useEffect(() => {
     if (activeMode !== "player" || playerStep === "JOIN" || !playerPin) return;
 
@@ -500,7 +500,10 @@ export const App: React.FC = () => {
 
       const remoteQIdx = liveSess.current_question_index || 0;
 
-      if (liveSess.status === "QUESTION") {
+      if (liveSess.status === "COUNTDOWN") {
+        setIsPlayerCountdown(true);
+      } else if (liveSess.status === "QUESTION") {
+        setIsPlayerCountdown(false);
         setPlayerForceTimeUp(false);
         if (playerStep !== "QUESTION" || playerQuestionIdx !== remoteQIdx) {
           setPlayerStep("QUESTION");
@@ -511,6 +514,7 @@ export const App: React.FC = () => {
       } else if (liveSess.status === "SHOW_RESULT") {
         setPlayerForceTimeUp(true);
       } else if (liveSess.status === "FINISHED" && playerStep !== "FINAL") {
+        setIsPlayerCountdown(false);
         setPlayerStep("FINAL");
       }
 
@@ -528,7 +532,7 @@ export const App: React.FC = () => {
     }
 
     pollGameStatus();
-    const interval = setInterval(pollGameStatus, 1500);
+    const interval = setInterval(pollGameStatus, 1000);
     return () => clearInterval(interval);
   }, [activeMode, playerStep, playerPin, playerQuestionIdx, participantName]);
 
