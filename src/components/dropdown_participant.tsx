@@ -32,21 +32,22 @@ export const DropdownParticipant: React.FC<DropdownParticipantProps> = ({
       const list = await fetchParticipantsList(quizId, roomPin);
       setParticipants(list);
 
+      let nameSet = new Set<string>();
       if (roomPin) {
         const roomParts = await fetchSessionParticipants('', roomPin);
         if (roomParts && roomParts.length > 0) {
-          const nameSet = new Set(roomParts.map((p) => p.participant_name.toLowerCase().trim()));
+          nameSet = new Set(roomParts.map((p) => p.participant_name.toLowerCase().trim()));
           setActiveNames(nameSet);
+        }
+      }
 
-          // Find first unassigned participant if none selected
-          if (!selectedName) {
-            const firstAvailable = list.find((p) => !nameSet.has(p.name.toLowerCase().trim()));
-            if (firstAvailable) {
-              onSelectParticipant(firstAvailable.name, firstAvailable.avatar || '🚀');
-            } else if (list.length > 0) {
-              onSelectParticipant(list[0].name, list[0].avatar || '🚀');
-            }
-          }
+      // Find first unassigned participant if none selected
+      if (!selectedName && list.length > 0) {
+        const firstAvailable = list.find((p) => !nameSet.has(p.name.toLowerCase().trim()));
+        if (firstAvailable) {
+          onSelectParticipant(firstAvailable.name, firstAvailable.avatar || '🚀');
+        } else {
+          onSelectParticipant(list[0].name, list[0].avatar || '🚀');
         }
       }
 

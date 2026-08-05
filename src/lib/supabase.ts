@@ -328,7 +328,19 @@ export async function verifyGameSessionPin(pin: string): Promise<GameSession | n
 // FETCH PARTICIPANTS FOR QUIZ / ROOM
 // -------------------------------------------------------------
 export async function fetchParticipantsForQuiz(quizId?: string, roomPin?: string): Promise<Participant[]> {
-  const key = quizId || 'quiz-agri-1';
+  let key = quizId;
+  let sessionQuiz: Quiz | undefined = undefined;
+
+  if (!key && roomPin) {
+    const session = await verifyGameSessionPin(roomPin);
+    if (session) {
+      key = session.quiz_id;
+      sessionQuiz = session.quiz;
+    }
+  }
+
+  key = key || 'quiz-agri-1';
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -347,7 +359,12 @@ export async function fetchParticipantsForQuiz(quizId?: string, roomPin?: string
     return mockParticipantsStore[key];
   }
 
-  return INITIAL_PARTICIPANT_NAMES.map((name, idx) => ({
+  const targetQuiz = sessionQuiz || mockQuizzesStore.find((q) => q.id === key || q.code === key);
+  const names = targetQuiz?.allowed_participants && targetQuiz.allowed_participants.length > 0
+    ? targetQuiz.allowed_participants
+    : INITIAL_PARTICIPANT_NAMES;
+
+  return names.map((name, idx) => ({
     id: `p-${key}-${idx}`,
     name,
     avatar: avatarsList[idx % avatarsList.length],

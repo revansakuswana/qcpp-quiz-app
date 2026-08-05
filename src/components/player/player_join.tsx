@@ -15,6 +15,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
   const [step, setStep] = useState<1 | 2>(1); // Step 1: Enter PIN, Step 2: Select Name & Avatar
   const [pin, setPin] = useState<string>('');
   const [activeSessionId, setActiveSessionId] = useState<string>('');
+  const [activeQuizId, setActiveQuizId] = useState<string>('');
   const [participantName, setParticipantName] = useState<string>('');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('🦊');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -51,8 +52,9 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
       return;
     }
 
-    // Save actual session ID & proceed to Step 2
+    // Save actual session ID & quiz ID & proceed to Step 2
     setActiveSessionId(validSession.id);
+    setActiveQuizId(validSession.quiz_id);
     soundFx.playCorrect();
     setStep(2);
   };
@@ -178,6 +180,7 @@ export const PlayerJoin: React.FC<PlayerJoinProps> = ({ onJoined, onSwitchToHost
                 selectedName={participantName}
                 onSelectParticipant={handleSelectParticipant}
                 roomPin={pin}
+                quizId={activeQuizId}
               />
             </div>
 
