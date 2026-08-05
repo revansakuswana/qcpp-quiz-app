@@ -51,9 +51,10 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   // Store exact question mount timestamp
   const mountTimeRef = React.useRef<number>(Date.now());
 
-  // Reset mount time when question changes
+  // Reset mount time & selected answer when question changes
   useEffect(() => {
     mountTimeRef.current = Date.now();
+    setLocalSelectedIdx(null);
   }, [questionIndex, question?.id]);
 
   const calculateTimeLeft = () => {

@@ -966,41 +966,84 @@ export async function submitPlayerAnswer(
   // 3. Save to Supabase Cloud DB using realSessionId (UUID)
   if (isSupabaseConfigured && supabase) {
     try {
-      const targetSessionId = realSessionId || sessionIdOrPin;
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let targetSessionId = realSessionId;
 
-      await supabase.from('player_answers').insert([
-        {
+      if (!targetSessionId || !uuidRegex.test(targetSessionId)) {
+        const { data: sessData } = await supabase
+          .from('game_sessions')
+          .select('id')
+          .eq('pin', sessionIdOrPin.trim())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (sessData && sessData.id) {
+          targetSessionId = sessData.id;
+        }
+      }
+
+      // Only attempt insert if we have a valid PostgreSQL UUID for session_id
+      if (targetSessionId && uuidRegex.test(targetSessionId)) {
+        let validQuestionId = questionId;
+
+        // If questionId is not a UUID, attempt to resolve a real UUID from DB
+        if (!uuidRegex.test(validQuestionId)) {
+          const { data: qRows } = await supabase
+            .from('questions')
+            .select('id')
+            .limit(10);
+          if (qRows && qRows.length > 0) {
+            const found = qRows.find((q) => uuidRegex.test(q.id));
+            if (found) validQuestionId = found.id;
+          }
+        }
+
+        const insertPayload: any = {
           session_id: targetSessionId,
-          question_id: questionId,
           participant_name: participantName,
           answer_index: answerIndex,
           is_correct: isCorrect,
           points_earned: pointsEarned,
           time_taken: timeTaken,
-        },
-      ]);
+        };
 
-      const { data: pData } = await supabase
-        .from('session_participants')
-        .select('*')
-        .eq('session_id', targetSessionId)
-        .eq('participant_name', participantName)
-        .maybeSingle();
+        if (uuidRegex.test(validQuestionId)) {
+          insertPayload.question_id = validQuestionId;
+        } else {
+          insertPayload.question_id = questionId;
+        }
 
-      if (pData) {
-        const newScore = (pData.score || 0) + pointsEarned;
-        const newStreak = isCorrect ? (pData.streak || 0) + 1 : 0;
-        const newCorrectCount = isCorrect ? (pData.correct_answers_count || 0) + 1 : (pData.correct_answers_count || 0);
+        const { error: insErr } = await supabase.from('player_answers').insert([insertPayload]);
+        if (insErr) {
+          console.warn('Supabase player_answers insert primary attempt notice:', insErr);
+          // Retry without question_id if FK or UUID constraint failed
+          delete insertPayload.question_id;
+          await supabase.from('player_answers').insert([insertPayload]);
+        }
 
-        await supabase
+        const { data: pData } = await supabase
           .from('session_participants')
-          .update({
-            score: newScore,
-            streak: newStreak,
-            correct_answers_count: newCorrectCount,
-          })
+          .select('*')
           .eq('session_id', targetSessionId)
-          .eq('participant_name', participantName);
+          .eq('participant_name', participantName)
+          .maybeSingle();
+
+        if (pData) {
+          const newScore = (pData.score || 0) + pointsEarned;
+          const newStreak = isCorrect ? (pData.streak || 0) + 1 : 0;
+          const newCorrectCount = isCorrect ? (pData.correct_answers_count || 0) + 1 : (pData.correct_answers_count || 0);
+
+          await supabase
+            .from('session_participants')
+            .update({
+              score: newScore,
+              streak: newStreak,
+              correct_answers_count: newCorrectCount,
+            })
+            .eq('session_id', targetSessionId)
+            .eq('participant_name', participantName);
+        }
       }
     } catch (err) {
       console.warn('Supabase submit answer error:', err);
@@ -1026,55 +1069,64 @@ export async function fetchPlayerAnswersForQuestion(
 ): Promise<PlayerAnswer[]> {
   const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
   const keysToTry = Array.from(new Set([realSessionId, sessionIdOrPin])).filter(Boolean);
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validUUIDs = keysToTry.filter((k) => uuidRegex.test(k));
 
-  if (isSupabaseConfigured && supabase) {
+  let cloudAnswers: PlayerAnswer[] = [];
+
+  if (isSupabaseConfigured && supabase && validUUIDs.length > 0) {
     try {
       const { data, error } = await supabase
         .from('player_answers')
         .select('*')
-        .in('session_id', keysToTry)
-        .eq('question_id', questionId);
+        .in('session_id', validUUIDs);
 
       if (!error && data && data.length > 0) {
-        const latestMap = new Map<string, PlayerAnswer>();
-        (data as PlayerAnswer[]).forEach((ans) => {
-          latestMap.set(ans.participant_name, ans);
-        });
-        const ansList = Array.from(latestMap.values());
-
-        keysToTry.forEach((key) => {
-          mockPlayerAnswersStore[key] = ansList;
-        });
-
-        return ansList;
+        cloudAnswers = data as PlayerAnswer[];
       }
     } catch (err) {
       console.warn('Supabase fetch answers error:', err);
     }
   }
 
-  // Fallback to local memory store
-  const allAns: PlayerAnswer[] = [];
+  // Fallback & Merge with local memory store
+  const allAns: PlayerAnswer[] = [...cloudAnswers];
   keysToTry.forEach((key) => {
     const list = mockPlayerAnswersStore[key] || [];
-    list.forEach((a) => {
-      if (a.question_id === questionId) {
-        allAns.push(a);
-      }
-    });
+    allAns.push(...list);
+  });
+
+  const filtered = allAns.filter(
+    (a) => !questionId || a.question_id === questionId || !a.question_id
+  );
+
+  const latestMap = new Map<string, PlayerAnswer>();
+  filtered.forEach((ans) => {
+    latestMap.set(ans.participant_name, ans);
+  });
+
+  const result = Array.from(latestMap.values());
+  keysToTry.forEach((key) => {
+    mockPlayerAnswersStore[key] = result;
+  });
+
+  return result;
+}
+
+export function getPlayerAnswersForQuestion(sessionId: string, questionId: string): PlayerAnswer[] {
+  const keysToTry = Object.keys(mockPlayerAnswersStore).filter(
+    (k) => k === sessionId || mockSessionsStore[k]?.pin === sessionId || mockSessionsStore[k]?.id === sessionId
+  );
+  if (keysToTry.length === 0) keysToTry.push(sessionId);
+
+  const allAns: PlayerAnswer[] = [];
+  keysToTry.forEach((key) => {
+    const list = (mockPlayerAnswersStore[key] || []).filter((a) => a.question_id === questionId);
+    allAns.push(...list);
   });
 
   const latestMap = new Map<string, PlayerAnswer>();
   allAns.forEach((ans) => {
-    latestMap.set(ans.participant_name, ans);
-  });
-  return Array.from(latestMap.values());
-}
-
-export function getPlayerAnswersForQuestion(sessionId: string, questionId: string): PlayerAnswer[] {
-  const mockList = (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
-  const latestMap = new Map<string, PlayerAnswer>();
-  mockList.forEach((ans) => {
     latestMap.set(ans.participant_name, ans);
   });
   return Array.from(latestMap.values());

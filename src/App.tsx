@@ -426,6 +426,8 @@ export const App: React.FC = () => {
     setParticipantName(pName);
     setPlayerAvatar(avatar);
     setPlayerStep("WAITING");
+    setHasAnsweredCurrent(false);
+    setSelectedAnswerIdx(null);
 
     let realSessId = sessionId;
     if (!realSessId) {
@@ -524,8 +526,8 @@ export const App: React.FC = () => {
       } else if (liveSess.status === "QUESTION") {
         setIsPlayerCountdown(false);
         setPlayerForceTimeUp(false);
-        setPlayerStep("QUESTION");
-        if (playerQuestionIdx !== remoteQIdx) {
+        if (playerStep !== "QUESTION" || playerQuestionIdx !== remoteQIdx) {
+          setPlayerStep("QUESTION");
           setPlayerQuestionIdx(remoteQIdx);
           setHasAnsweredCurrent(false);
           setSelectedAnswerIdx(null);
@@ -559,6 +561,8 @@ export const App: React.FC = () => {
     answerIndex: number,
     timeTaken: number
   ) => {
+    if (hasAnsweredCurrent) return;
+
     const activeQuiz = playerQuiz || hostSession?.quiz || quizzes[0];
     const activeQIdx = playerQuestionIdx;
     if (!activeQuiz || !activeQuiz.questions || activeQuiz.questions.length === 0) return;
@@ -578,7 +582,7 @@ export const App: React.FC = () => {
       ? Math.round(currentQ.points * (0.5 + 0.5 * speedRatio))
       : 0;
 
-    const activeSessId = playerSessionId || hostSession?.id;
+    const activeSessId = playerSessionId || playerPin || hostSession?.id;
     if (activeSessId) {
       await submitPlayerAnswer(
         activeSessId,
@@ -679,6 +683,7 @@ export const App: React.FC = () => {
 
             {playerStep === "QUESTION" && currentActiveQuiz && (
               <PlayerQuestion
+                key={`player-q-${playerQuestionIdx}-${currentActiveQuiz.id || 'q'}`}
                 question={
                   (currentActiveQuiz.questions && currentActiveQuiz.questions[playerQuestionIdx]) ||
                   (currentActiveQuiz.questions && currentActiveQuiz.questions[0]) ||
@@ -784,6 +789,7 @@ export const App: React.FC = () => {
 
                 {hostStep === "QUESTION" && hostSession.quiz && hostSession.quiz.questions && (
                   <HostQuestion
+                    key={`host-q-${hostCurrentQuestionIdx}-${hostSession.quiz.id || 'q'}`}
                     question={
                       hostSession.quiz.questions[hostCurrentQuestionIdx] || hostSession.quiz.questions[0]
                     }

@@ -36,13 +36,17 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
 
   // Store exact question mount timestamp
   const mountTimeRef = React.useRef<number>(Date.now());
+  const [isSkipped, setIsSkipped] = useState<boolean>(false);
 
-  // Reset mount time when question changes
+  // Reset mount time and skipped status when question changes
   useEffect(() => {
     mountTimeRef.current = Date.now();
+    setIsSkipped(false);
   }, [questionIndex, question?.id]);
 
   const calculateTimeLeft = () => {
+    if (isSkipped) return 0;
+
     let start = questionStartedAt || mountTimeRef.current;
     const elapsedFromStart = (Date.now() - start) / 1000;
 
@@ -172,6 +176,7 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
           <button
             onClick={() => {
               soundFx.playClick();
+              setIsSkipped(true);
               setTimeLeft(0);
               if (onSkipTimer) onSkipTimer();
             }}
