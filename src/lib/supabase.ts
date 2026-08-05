@@ -906,7 +906,7 @@ export function getSessionParticipants(sessionId: string): SessionParticipant[] 
 // PLAYER ANSWERS & SCORE UPDATES
 // -------------------------------------------------------------
 export async function submitPlayerAnswer(
-  sessionId: string,
+  sessionIdOrPin: string,
   questionId: string,
   participantName: string,
   answerIndex: number,
@@ -914,9 +914,12 @@ export async function submitPlayerAnswer(
   pointsEarned: number,
   timeTaken: number
 ): Promise<boolean> {
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
+  const keysToSync = Array.from(new Set([realSessionId, sessionIdOrPin])).filter(Boolean);
+
   const newAns: PlayerAnswer = {
-    id: `ans-${Date.now()}`,
-    session_id: sessionId,
+    id: `ans-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    session_id: realSessionId || sessionIdOrPin,
     question_id: questionId,
     participant_name: participantName,
     answer_index: answerIndex,
@@ -925,28 +928,49 @@ export async function submitPlayerAnswer(
     time_taken: timeTaken,
   };
 
-  if (!mockPlayerAnswersStore[sessionId]) {
-    mockPlayerAnswersStore[sessionId] = [];
-  }
-  mockPlayerAnswersStore[sessionId].push(newAns);
-
-  const parts = mockSessionParticipantsStore[sessionId] || [];
-  const part = parts.find((p) => p.participant_name === participantName);
-  if (part) {
-    part.score += pointsEarned;
-    part.streak = isCorrect ? part.streak + 1 : 0;
-    part.last_points_gained = pointsEarned;
-    part.last_is_correct = isCorrect;
-    if (isCorrect) {
-      part.correct_answers_count = (part.correct_answers_count || 0) + 1;
+  // 1. Sync answer to all local store keys
+  keysToSync.forEach((key) => {
+    if (key) {
+      if (!mockPlayerAnswersStore[key]) {
+        mockPlayerAnswersStore[key] = [];
+      }
+      const existingIdx = mockPlayerAnswersStore[key].findIndex(
+        (a) => a.participant_name === participantName && a.question_id === questionId
+      );
+      if (existingIdx >= 0) {
+        mockPlayerAnswersStore[key][existingIdx] = newAns;
+      } else {
+        mockPlayerAnswersStore[key].push(newAns);
+      }
     }
-  }
+  });
 
+  // 2. Sync participant score and streak in memory
+  keysToSync.forEach((key) => {
+    if (key && mockSessionParticipantsStore[key]) {
+      const part = mockSessionParticipantsStore[key].find(
+        (p) => p.participant_name === participantName
+      );
+      if (part) {
+        part.score += pointsEarned;
+        part.streak = isCorrect ? part.streak + 1 : 0;
+        part.last_points_gained = pointsEarned;
+        part.last_is_correct = isCorrect;
+        if (isCorrect) {
+          part.correct_answers_count = (part.correct_answers_count || 0) + 1;
+        }
+      }
+    }
+  });
+
+  // 3. Save to Supabase Cloud DB using realSessionId (UUID)
   if (isSupabaseConfigured && supabase) {
     try {
+      const targetSessionId = realSessionId || sessionIdOrPin;
+
       await supabase.from('player_answers').insert([
         {
-          session_id: sessionId,
+          session_id: targetSessionId,
           question_id: questionId,
           participant_name: participantName,
           answer_index: answerIndex,
@@ -956,53 +980,92 @@ export async function submitPlayerAnswer(
         },
       ]);
 
-      if (part) {
+      const { data: pData } = await supabase
+        .from('session_participants')
+        .select('*')
+        .eq('session_id', targetSessionId)
+        .eq('participant_name', participantName)
+        .maybeSingle();
+
+      if (pData) {
+        const newScore = (pData.score || 0) + pointsEarned;
+        const newStreak = isCorrect ? (pData.streak || 0) + 1 : 0;
+        const newCorrectCount = isCorrect ? (pData.correct_answers_count || 0) + 1 : (pData.correct_answers_count || 0);
+
         await supabase
           .from('session_participants')
           .update({
-            score: part.score,
-            streak: part.streak,
+            score: newScore,
+            streak: newStreak,
+            correct_answers_count: newCorrectCount,
           })
-          .eq('session_id', sessionId)
+          .eq('session_id', targetSessionId)
           .eq('participant_name', participantName);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Supabase submit answer error:', err);
     }
   }
 
-  notifyMockListeners(`session:${sessionId}`, {
-    type: 'ANSWER_SUBMITTED',
-    answer: newAns,
-    participants: parts,
+  // 4. Notify real-time listeners across all keys
+  keysToSync.forEach((key) => {
+    if (key) {
+      notifyMockListeners(`session:${key}`, {
+        type: 'ANSWER_SUBMITTED',
+        answer: newAns,
+      });
+    }
   });
 
   return true;
 }
 
-export async function fetchPlayerAnswersForQuestion(sessionId: string, questionId: string): Promise<PlayerAnswer[]> {
+export async function fetchPlayerAnswersForQuestion(
+  sessionIdOrPin: string,
+  questionId: string
+): Promise<PlayerAnswer[]> {
+  const realSessionId = await resolveRealSessionUUID(sessionIdOrPin);
+  const keysToTry = Array.from(new Set([realSessionId, sessionIdOrPin])).filter(Boolean);
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
         .from('player_answers')
         .select('*')
-        .eq('session_id', sessionId)
+        .in('session_id', keysToTry)
         .eq('question_id', questionId);
-      if (!error && data) {
+
+      if (!error && data && data.length > 0) {
         const latestMap = new Map<string, PlayerAnswer>();
         (data as PlayerAnswer[]).forEach((ans) => {
           latestMap.set(ans.participant_name, ans);
         });
-        return Array.from(latestMap.values());
+        const ansList = Array.from(latestMap.values());
+
+        keysToTry.forEach((key) => {
+          mockPlayerAnswersStore[key] = ansList;
+        });
+
+        return ansList;
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('Supabase fetch answers error:', err);
     }
   }
 
-  const mockList = (mockPlayerAnswersStore[sessionId] || []).filter((a) => a.question_id === questionId);
+  // Fallback to local memory store
+  const allAns: PlayerAnswer[] = [];
+  keysToTry.forEach((key) => {
+    const list = mockPlayerAnswersStore[key] || [];
+    list.forEach((a) => {
+      if (a.question_id === questionId) {
+        allAns.push(a);
+      }
+    });
+  });
+
   const latestMap = new Map<string, PlayerAnswer>();
-  mockList.forEach((ans) => {
+  allAns.forEach((ans) => {
     latestMap.set(ans.participant_name, ans);
   });
   return Array.from(latestMap.values());

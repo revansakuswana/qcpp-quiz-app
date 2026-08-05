@@ -398,6 +398,25 @@ export const App: React.FC = () => {
     );
   };
 
+  // Live poll player answers for current question on Host screen (1-second interval)
+  useEffect(() => {
+    if (activeMode !== "host" || hostStep !== "QUESTION" || !hostSession || !hostSession.quiz) return;
+
+    const currentQ = hostSession.quiz.questions[hostCurrentQuestionIdx];
+    if (!currentQ) return;
+
+    async function syncHostAnswers() {
+      const freshAnswers = await fetchPlayerAnswersForQuestion(hostSession.id, currentQ.id);
+      if (freshAnswers) {
+        setHostCurrentAnswers(freshAnswers);
+      }
+    }
+
+    syncHostAnswers();
+    const interval = setInterval(syncHostAnswers, 1000);
+    return () => clearInterval(interval);
+  }, [activeMode, hostStep, hostSession, hostCurrentQuestionIdx]);
+
   // ==========================================
   // PLAYER ACTIONS & LIVE GAME STATUS SYNC
   // ==========================================
