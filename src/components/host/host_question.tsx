@@ -25,36 +25,62 @@ export const HostQuestion: React.FC<HostQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
+  questionStartedAt,
   answers = [],
   totalPlayers = 0,
   onNextStep,
   onSkipTimer,
 }) => {
   const timeLimit = question?.time_limit || 30;
-  const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
   const isLastQuestion = questionIndex >= totalQuestions - 1;
 
-  // Reset timer ONLY when question changes
+  // Store exact question mount timestamp
+  const mountTimeRef = React.useRef<number>(Date.now());
+
+  // Reset mount time when question changes
   useEffect(() => {
-    setTimeLeft(question?.time_limit || 30);
+    mountTimeRef.current = Date.now();
   }, [questionIndex, question?.id]);
 
-  // Clean 1-second countdown
+  const calculateTimeLeft = () => {
+    let start = questionStartedAt || mountTimeRef.current;
+    const elapsedFromStart = (Date.now() - start) / 1000;
+
+    // If questionStartedAt is invalid/stale (> timeLimit or in the future), use exact mount time
+    if (elapsedFromStart < 0 || elapsedFromStart >= timeLimit) {
+      start = mountTimeRef.current;
+    }
+
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    const remaining = timeLimit - elapsed;
+    return Math.max(0, remaining);
+  };
+
+  const [timeLeft, setTimeLeft] = useState<number>(calculateTimeLeft);
+
+  // Real-time synced timer resilient against tab switching & reload
   useEffect(() => {
-    if (timeLeft <= 0) return;
+    const syncTimer = () => {
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+    };
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    syncTimer();
+    const interval = setInterval(syncTimer, 250);
 
-    return () => clearInterval(timer);
-  }, [timeLeft, questionIndex]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncTimer();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [questionIndex, question?.id, questionStartedAt, timeLimit]);
 
   const isTimeUp = timeLeft <= 0;
 

@@ -7,6 +7,7 @@ interface PlayerQuestionProps {
   question: Question;
   questionIndex: number;
   totalQuestions: number;
+  questionStartedAt?: number;
   forceTimeUp?: boolean;
   onSubmitAnswer: (answerIndex: number, timeTaken: number) => void;
   selectedAnswerIndex: number | null;
@@ -39,49 +40,71 @@ export const PlayerQuestion: React.FC<PlayerQuestionProps> = ({
   question,
   questionIndex,
   totalQuestions,
+  questionStartedAt,
   forceTimeUp = false,
   onSubmitAnswer,
   selectedAnswerIndex,
 }) => {
   const timeLimit = question?.time_limit || 30;
-  const [timeLeft, setTimeLeft] = useState<number>(timeLimit);
-  const [startTime] = useState<number>(Date.now());
   const [localSelectedIdx, setLocalSelectedIdx] = useState<number | null>(selectedAnswerIndex);
 
-  // Reset timer ONLY when question changes
+  // Store exact question mount timestamp
+  const mountTimeRef = React.useRef<number>(Date.now());
+
+  // Reset mount time when question changes
   useEffect(() => {
-    setTimeLeft(question?.time_limit || 30);
+    mountTimeRef.current = Date.now();
   }, [questionIndex, question?.id]);
+
+  const calculateTimeLeft = () => {
+    if (forceTimeUp) return 0;
+
+    let start = questionStartedAt || mountTimeRef.current;
+    const elapsedFromStart = (Date.now() - start) / 1000;
+
+    // If questionStartedAt is invalid/stale (> timeLimit or in the future), use exact mount time
+    if (elapsedFromStart < 0 || elapsedFromStart >= timeLimit) {
+      start = mountTimeRef.current;
+    }
+
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    const remaining = timeLimit - elapsed;
+    return Math.max(0, remaining);
+  };
+
+  const [timeLeft, setTimeLeft] = useState<number>(calculateTimeLeft);
 
   // Sync selected answer index without touching timer
   useEffect(() => {
     setLocalSelectedIdx(selectedAnswerIndex);
   }, [selectedAnswerIndex]);
 
-  // Clean, accurate 1-second countdown
+  // Real-time synced timer resilient against tab switching & reload
   useEffect(() => {
-    if (forceTimeUp) {
-      setTimeLeft(0);
-      return;
-    }
+    const syncTimer = () => {
+      const remaining = calculateTimeLeft();
+      setTimeLeft(remaining);
+      if (remaining <= 5 && remaining > 0) {
+        soundFx.playTick();
+      }
+    };
 
-    if (timeLeft <= 0) return;
+    syncTimer();
+    const interval = setInterval(syncTimer, 250);
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        if (prev <= 5) {
-          soundFx.playTick();
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncTimer();
+      }
+    };
 
-    return () => clearInterval(timer);
-  }, [timeLeft, forceTimeUp, questionIndex]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [questionIndex, question?.id, questionStartedAt, timeLimit, forceTimeUp]);
 
   const handleSelectOption = (index: number) => {
     if (timeLeft <= 0 || forceTimeUp) return;

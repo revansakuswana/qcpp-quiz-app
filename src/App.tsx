@@ -505,8 +505,8 @@ export const App: React.FC = () => {
       } else if (liveSess.status === "QUESTION") {
         setIsPlayerCountdown(false);
         setPlayerForceTimeUp(false);
-        if (playerStep !== "QUESTION" || playerQuestionIdx !== remoteQIdx) {
-          setPlayerStep("QUESTION");
+        setPlayerStep("QUESTION");
+        if (playerQuestionIdx !== remoteQIdx) {
           setPlayerQuestionIdx(remoteQIdx);
           setHasAnsweredCurrent(false);
           setSelectedAnswerIdx(null);
@@ -667,6 +667,7 @@ export const App: React.FC = () => {
                 }
                 questionIndex={playerQuestionIdx}
                 totalQuestions={(currentActiveQuiz.questions || quizzes[0].questions).length}
+                questionStartedAt={questionStartedAt}
                 forceTimeUp={playerForceTimeUp}
                 onSubmitAnswer={handlePlayerSubmitAnswer}
                 selectedAnswerIndex={selectedAnswerIdx}
@@ -803,6 +804,10 @@ export const App: React.FC = () => {
               finishHostCountdown();
             } else {
               setIsPlayerCountdown(false);
+              setPlayerStep("QUESTION");
+              setPlayerQuestionIdx(0);
+              setHasAnsweredCurrent(false);
+              setSelectedAnswerIdx(null);
             }
           }}
           title={hostSession?.quiz?.title || playerQuiz?.title || "Persiapkan Diri!"}

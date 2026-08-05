@@ -670,18 +670,22 @@ export async function updateGameSessionState(
   if (isSupabaseConfigured && supabase) {
     try {
       const isPin = sessionId.length === 6 && /^\d+$/.test(sessionId);
-      let query = supabase.from('game_sessions').update({
+      const updatePayload: Record<string, any> = {
         status,
         current_question_index: questionIndex,
-        updated_at: new Date(now).toISOString(),
-      });
+      };
+
+      let query = supabase.from('game_sessions').update(updatePayload);
 
       if (isPin) {
         query = query.eq('pin', sessionId);
-      } else {
+      } else if (realSessionId) {
         query = query.eq('id', realSessionId);
       }
-      await query;
+      const { error } = await query;
+      if (error) {
+        console.warn('Supabase update session error:', error);
+      }
     } catch (err) {
       console.warn('Supabase update session status error:', err);
     }
